@@ -7,15 +7,14 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const PlanMyDayHomeScreen = ({ navigation }) => {
+export default function PlanMyDayHomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      
-      {/* Background Waterfall Image */}
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?q=80&w=1000&auto=format&fit=crop',
@@ -23,140 +22,146 @@ const PlanMyDayHomeScreen = ({ navigation }) => {
         style={styles.backgroundImage}
         resizeMode="cover"
       >
-        <SafeAreaView style={styles.overlayContainer}>
-          {/* Top Back Button */}
-          <View style={styles.header}>
-            <TouchableOpacity 
-              style={styles.backButton} 
-              onPress={() => navigation?.goBack()}
-            >
-              <Ionicons name="arrow-back" size={20} color="#000" />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.overlay}>
+          <SafeAreaView style={styles.safeArea}>
+            {/* Top Back Button */}
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} activeOpacity={0.7}>
+                <Ionicons name="arrow-back" size={18} color="#000" />
+              </TouchableOpacity>
+            </View>
 
-          {/* Main Overlay Content */}
-          <View style={styles.contentContainer}>
-            <Text style={styles.subtitle}>PERSONALISED BY YOU</Text>
-            <Text style={styles.title}>Your day,{"\n"}your way</Text>
-            <Text style={styles.description}>Plan your perfect getaway.</Text>
+            {/* Bottom Content Area - Pushed to Bottom */}
+            <View style={styles.contentContainer}>
+              <Text style={styles.subtitle}>PERSONALISED BY YOU</Text>
+              <Text style={styles.title}>Your day,{"\n"}your way</Text>
+              <Text style={styles.description}>
+                Plan your perfect getaway.
+              </Text>
 
-            {/* Create My Plan Button */}
-            <TouchableOpacity
-              style={styles.createButton}
-              activeOpacity={0.8}
-              onPress={() => navigation?.navigate('PlanForm')}
-            >
-              <Text style={styles.buttonText}>Create my plan</Text>
-              <Ionicons name="arrow-forward" size={18} color="#0F172A" style={styles.buttonIcon} />
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
+              <TouchableOpacity
+                style={styles.createButton}
+                activeOpacity={0.85}
+                onPress={() => navigation && navigation.navigate('PlanMyDayForm')}
+              >
+                <Text style={styles.buttonText}>Create my plan</Text>
+                <Ionicons name="arrow-forward" size={16} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Bottom Navigation Bar */}
+            <View style={styles.bottomTab}>
+              <TouchableOpacity style={styles.tabItem}>
+                <Ionicons name="home-outline" size={20} color="#718096" />
+                <Text style={styles.tabLabel}>Home</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tabItem}>
+                <Ionicons name="bed-outline" size={20} color="#718096" />
+                <Text style={styles.tabLabel}>Rooms</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tabItem}>
+                <Ionicons name="compass-outline" size={20} color="#718096" />
+                <Text style={styles.tabLabel}>Explore</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tabItem}>
+                <Ionicons name="compass" size={20} color="#1A365D" />
+                <Text style={[styles.tabLabel, styles.activeTabLabel]}>Plan</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tabItem}>
+                <Ionicons name="person-outline" size={20} color="#718096" />
+                <Text style={styles.tabLabel}>Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
       </ImageBackground>
-
-      {/* Bottom Navigation Bar */}
-      <View style={styles.bottomTab}>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="home-outline" size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="bed-outline" size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Rooms</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="compass-outline" size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Explore</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="home" size={22} color="#1E3A8A" />
-          <View style={styles.activeIndicator} />
-          <Text style={[styles.tabLabel, styles.activeTabLabel]}>Plan</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="person-outline" size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    ...(Platform.OS === 'web' && {
+      height: '100vh',
+      overflow: 'hidden',
+    }),
   },
   backgroundImage: {
     flex: 1,
     width: '100%',
     height: '100%',
   },
-  overlayContainer: {
+  overlay: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  safeArea: {
+    flex: 1,
   },
   header: {
-    marginTop: 10,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 35 : 15,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   contentContainer: {
-    marginBottom: 20,
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 24,
+    paddingBottom: 30,
   },
   subtitle: {
-    color: '#FFFFFF',
-    fontSize: 12,
+    color: '#E2E8F0',
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginBottom: 8,
+    marginBottom: 6,
     textTransform: 'uppercase',
   },
   title: {
     color: '#FFFFFF',
-    fontSize: 40,
-    fontWeight: 'bold',
-    lineHeight: 46,
+    fontSize: 32,
+    fontWeight: '800',
+    lineHeight: 38,
     marginBottom: 8,
   },
   description: {
     color: '#E2E8F0',
-    fontSize: 16,
-    marginBottom: 24,
+    fontSize: 14,
+    fontWeight: '400',
+    marginBottom: 20,
   },
   createButton: {
     backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 25,
     alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   buttonText: {
-    color: '#0F172A',
-    fontSize: 16,
+    color: '#000000',
+    fontSize: 14,
     fontWeight: '600',
-  },
-  buttonIcon: {
-    marginLeft: 8,
+    marginRight: 8,
   },
   bottomTab: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderTopWidth: 1,
@@ -169,20 +174,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 4,
+    fontSize: 10,
+    color: '#718096',
+    marginTop: 3,
   },
   activeTabLabel: {
-    color: '#1E3A8A',
-    fontWeight: '600',
-  },
-  activeIndicator: {
-    width: 20,
-    height: 2,
-    backgroundColor: '#1E3A8A',
-    marginTop: 2,
+    color: '#1A365D',
+    fontWeight: 'bold',
   },
 });
-
-export default PlanMyDayHomeScreen;
