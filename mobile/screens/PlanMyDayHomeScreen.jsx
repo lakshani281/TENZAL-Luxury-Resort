@@ -11,7 +11,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PlanMyDayHomeScreen({ navigation }) {
+export default function PlanMyDayHomeScreen({ navigation, onNavigateToForm }) {
+  const handlePressCreatePlan = () => {
+    if (onNavigateToForm) {
+      onNavigateToForm();
+    } else if (navigation && navigation.navigate) {
+      navigation.navigate('PlanMyDayForm');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -42,7 +50,7 @@ export default function PlanMyDayHomeScreen({ navigation }) {
               <TouchableOpacity
                 style={styles.createButton}
                 activeOpacity={0.85}
-                onPress={() => navigation && navigation.navigate('PlanMyDayForm')}
+                onPress={handlePressCreatePlan}
               >
                 <Text style={styles.buttonText}>Create my plan</Text>
                 <Ionicons name="arrow-forward" size={16} color="#000" />
