@@ -27,7 +27,7 @@ export default function PlanMyDayFormScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.backButton} 
             activeOpacity={0.7}
-            onPress={() => navigation && navigation.goBack()}
+            onPress={() => navigation && navigation.goBack && navigation.goBack()}
           >
             <Ionicons name="arrow-back" size={18} color="#2D3748" />
           </TouchableOpacity>
@@ -46,7 +46,7 @@ export default function PlanMyDayFormScreen({ navigation }) {
         <View style={styles.imageContainer}>
           <Image
             source={{
-              uri: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=1000&auto=format&fit=crop',
+              uri: 'https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800',
             }}
             style={styles.image}
             resizeMode="cover"
@@ -152,10 +152,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#319795',
   },
   imageContainer: {
-    height: 200,
+    width: '100%',
+    height: 180,
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 20,
+    backgroundColor: '#E2E8F0',
   },
   image: {
     width: '100%',
