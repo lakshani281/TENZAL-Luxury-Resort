@@ -12,10 +12,26 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PlanMyDayFormScreen({ navigation }) {
+export default function PlanMyDayFormScreen({ navigation, onNext, onBack }) {
   const [selectedTime, setSelectedTime] = useState('Full Day');
 
   const timeOptions = ['3 Hours', '6 Hours', 'Full Day', 'Custom'];
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (navigation && navigation.goBack) {
+      navigation.goBack();
+    }
+  };
+
+  const handleNext = () => {
+    if (onNext) {
+      onNext();
+    } else if (navigation && navigation.navigate) {
+      navigation.navigate('PlanMyDayBudget');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -27,7 +43,7 @@ export default function PlanMyDayFormScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.backButton} 
             activeOpacity={0.7}
-            onPress={() => navigation && navigation.goBack && navigation.goBack()}
+            onPress={handleBack}
           >
             <Ionicons name="arrow-back" size={18} color="#2D3748" />
           </TouchableOpacity>
@@ -88,7 +104,11 @@ export default function PlanMyDayFormScreen({ navigation }) {
         </View>
 
         {/* Continue Button */}
-        <TouchableOpacity style={styles.continueButton} activeOpacity={0.85}>
+        <TouchableOpacity 
+          style={styles.continueButton} 
+          activeOpacity={0.85}
+          onPress={handleNext}
+        >
           <Text style={styles.continueButtonText}>Continue</Text>
           <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>

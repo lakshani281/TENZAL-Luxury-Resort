@@ -13,6 +13,7 @@ export default function App() {
         navigation={{ 
           goBack: () => setCurrentScreen('Form') 
         }} 
+        onBack={() => setCurrentScreen('Form')}
       />
     );
   }
@@ -23,8 +24,16 @@ export default function App() {
       <PlanMyDayFormScreen 
         navigation={{ 
           goBack: () => setCurrentScreen('Home'),
-          navigate: (screenName) => setCurrentScreen(screenName)
+          navigate: (screenName) => {
+            if (screenName === 'PlanMyDayBudget' || screenName === 'Budget') {
+              setCurrentScreen('Budget');
+            } else if (screenName === 'PlanMyDayHome' || screenName === 'Home') {
+              setCurrentScreen('Home');
+            }
+          }
         }} 
+        onNext={() => setCurrentScreen('Budget')}
+        onBack={() => setCurrentScreen('Home')}
         onNavigateToBudget={() => setCurrentScreen('Budget')}
       />
     );
