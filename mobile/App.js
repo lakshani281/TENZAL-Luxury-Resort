@@ -24,17 +24,10 @@ export default function App() {
       <PlanMyDayFormScreen 
         navigation={{ 
           goBack: () => setCurrentScreen('Home'),
-          navigate: (screenName) => {
-            if (screenName === 'PlanMyDayBudget' || screenName === 'Budget') {
-              setCurrentScreen('Budget');
-            } else if (screenName === 'PlanMyDayHome' || screenName === 'Home') {
-              setCurrentScreen('Home');
-            }
-          }
+          navigate: (screenName) => setCurrentScreen('Budget')
         }} 
         onNext={() => setCurrentScreen('Budget')}
         onBack={() => setCurrentScreen('Home')}
-        onNavigateToBudget={() => setCurrentScreen('Budget')}
       />
     );
   }
