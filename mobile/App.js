@@ -2,18 +2,35 @@ import React, { useState } from 'react';
 import PlanMyDayHomeScreen from './screens/PlanMyDayHomeScreen';
 import PlanMyDayFormScreen from './screens/PlanMyDayFormScreen';
 import PlanMyDayBudgetScreen from './screens/PlanMyDayBudgetScreen';
+import PlanMyDayInterestsScreen from './screens/PlanMyDayInterestsScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+
+  // Screen 4: Interests Screen
+  if (currentScreen === 'Interests') {
+    return (
+      <PlanMyDayInterestsScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Budget'),
+          navigate: (screenName) => setCurrentScreen('Summary')
+        }}
+        onBack={() => setCurrentScreen('Budget')}
+        onNext={() => setCurrentScreen('Summary')}
+      />
+    );
+  }
 
   // Screen 3: Budget Screen
   if (currentScreen === 'Budget') {
     return (
       <PlanMyDayBudgetScreen 
         navigation={{ 
-          goBack: () => setCurrentScreen('Form') 
+          goBack: () => setCurrentScreen('Form'),
+          navigate: (screenName) => setCurrentScreen('Interests')
         }} 
         onBack={() => setCurrentScreen('Form')}
+        onNext={() => setCurrentScreen('Interests')}
       />
     );
   }
