@@ -12,7 +12,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PlanMyDayBudgetScreen({ navigation }) {
+export default function PlanMyDayBudgetScreen({ navigation, onNext, onBack }) {
   const [budget, setBudget] = useState(25000);
 
   const formatCurrency = (val) => {
@@ -28,7 +28,7 @@ export default function PlanMyDayBudgetScreen({ navigation }) {
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.backButton} 
-            onPress={() => navigation?.goBack()}
+            onPress={onBack || (() => navigation?.goBack())}
             activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={20} color="#1E293B" />
@@ -88,10 +88,7 @@ export default function PlanMyDayBudgetScreen({ navigation }) {
         {/* Continue Button */}
         <TouchableOpacity
           style={styles.continueButton}
-          onPress={() => {
-            // ඊළඟ Screen එකට (Screen 4) navigate වීම මෙතැනින් සිදු කල හැක
-            console.log('Selected Budget:', budget);
-          }}
+          onPress={onNext || (() => navigation?.navigate('Interests'))}
           activeOpacity={0.8}
         >
           <Text style={styles.continueButtonText}>Continue</Text>
