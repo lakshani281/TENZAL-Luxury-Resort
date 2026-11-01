@@ -13,7 +13,7 @@ export default function App() {
       <PlanMyDayInterestsScreen
         navigation={{
           goBack: () => setCurrentScreen('Budget'),
-          navigate: (screenName) => setCurrentScreen('Summary')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary')
         }}
         onBack={() => setCurrentScreen('Budget')}
         onNext={() => setCurrentScreen('Summary')}
@@ -27,7 +27,7 @@ export default function App() {
       <PlanMyDayBudgetScreen 
         navigation={{ 
           goBack: () => setCurrentScreen('Form'),
-          navigate: (screenName) => setCurrentScreen('Interests')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Interests')
         }} 
         onBack={() => setCurrentScreen('Form')}
         onNext={() => setCurrentScreen('Interests')}
@@ -41,7 +41,7 @@ export default function App() {
       <PlanMyDayFormScreen 
         navigation={{ 
           goBack: () => setCurrentScreen('Home'),
-          navigate: (screenName) => setCurrentScreen('Budget')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Budget')
         }} 
         onNext={() => setCurrentScreen('Budget')}
         onBack={() => setCurrentScreen('Home')}
