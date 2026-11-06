@@ -44,7 +44,7 @@ export default function PlanMyDayInterestsScreen({ navigation, onNext, onBack })
     if (onNext) {
       onNext(selectedInterests);
     } else if (navigation && navigation.navigate) {
-      navigation.navigate('PlanMyDaySummary');
+      navigation.navigate('Travel');
     }
   };
 
