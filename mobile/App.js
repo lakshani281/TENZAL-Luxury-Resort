@@ -3,25 +3,40 @@ import PlanMyDayHomeScreen from './screens/PlanMyDayHomeScreen';
 import PlanMyDayFormScreen from './screens/PlanMyDayFormScreen';
 import PlanMyDayBudgetScreen from './screens/PlanMyDayBudgetScreen';
 import PlanMyDayInterestsScreen from './screens/PlanMyDayInterestsScreen';
+import PlanMyDayTravelScreen from './screens/PlanMyDayTravelScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
 
-  // Screen 4: Interests Screen
-  if (currentScreen === 'Interests') {
+  // Screen 5: Travel Mode Screen (Getting Around - Step 4 of 5)
+  if (currentScreen === 'Travel') {
     return (
-      <PlanMyDayInterestsScreen
+      <PlanMyDayTravelScreen
         navigation={{
-          goBack: () => setCurrentScreen('Budget'),
+          goBack: () => setCurrentScreen('Interests'),
           navigate: (screenName) => setCurrentScreen(screenName || 'Summary')
         }}
-        onBack={() => setCurrentScreen('Budget')}
+        onBack={() => setCurrentScreen('Interests')}
         onNext={() => setCurrentScreen('Summary')}
       />
     );
   }
 
-  // Screen 3: Budget Screen
+  // Screen 4: Interests Screen (Step 3 of 5)
+  if (currentScreen === 'Interests') {
+    return (
+      <PlanMyDayInterestsScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Budget'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Travel')
+        }}
+        onBack={() => setCurrentScreen('Budget')}
+        onNext={() => setCurrentScreen('Travel')}
+      />
+    );
+  }
+
+  // Screen 3: Budget Screen (Step 2 of 5)
   if (currentScreen === 'Budget') {
     return (
       <PlanMyDayBudgetScreen 
@@ -35,7 +50,7 @@ export default function App() {
     );
   }
 
-  // Screen 2: Form Screen
+  // Screen 2: Form Screen (Step 1 of 5)
   if (currentScreen === 'Form') {
     return (
       <PlanMyDayFormScreen 
