@@ -863,7 +863,12 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         visible={orderConfirmedVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setOrderConfirmedVisible(false)}
+        onRequestClose={() => {
+          setOrderConfirmedVisible(false);
+          setCart([]);
+          setSelectedDeliveryRoom('');
+          setSpecialNote('');
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmationCard}>
@@ -898,6 +903,7 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                 setOrderConfirmedVisible(false);
                 setCart([]);
                 setSelectedDeliveryRoom('');
+                setSpecialNote('');
               }}
             >
               <Text style={styles.doneBtnText}>Back to Food Menu</Text>
@@ -940,6 +946,12 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                     ? activeOrder.items.map((it) => `• ${it.name} x${it.quantity}`).join('\n')
                     : '• No items in active order'}
                 </Text>
+
+                {activeOrder?.specialNote && activeOrder.specialNote.trim() ? (
+                  <Text style={styles.orderSpecialNote}>
+                    Note: {activeOrder.specialNote}
+                  </Text>
+                ) : null}
 
                 <View style={styles.orderFooterRow}>
                   <Text style={styles.orderDeliveringTo}>
@@ -1913,6 +1925,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.darkSlate,
     lineHeight: 18,
+  },
+  orderSpecialNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: THEME.mutedSlate,
+    marginTop: 4,
   },
   orderFooterRow: {
     flexDirection: 'row',
