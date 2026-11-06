@@ -4,9 +4,24 @@ import PlanMyDayFormScreen from './screens/PlanMyDayFormScreen';
 import PlanMyDayBudgetScreen from './screens/PlanMyDayBudgetScreen';
 import PlanMyDayInterestsScreen from './screens/PlanMyDayInterestsScreen';
 import PlanMyDayTravelScreen from './screens/PlanMyDayTravelScreen';
+import PlanMyDayTravellersScreen from './screens/PlanMyDayTravellersScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+
+  // Screen 6: Travellers Screen (Step 5 of 5)
+  if (currentScreen === 'Travellers') {
+    return (
+      <PlanMyDayTravellersScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Travel'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary')
+        }}
+        onBack={() => setCurrentScreen('Travel')}
+        onNext={() => setCurrentScreen('Summary')}
+      />
+    );
+  }
 
   // Screen 5: Travel Mode Screen (Getting Around - Step 4 of 5)
   if (currentScreen === 'Travel') {
@@ -14,10 +29,10 @@ export default function App() {
       <PlanMyDayTravelScreen
         navigation={{
           goBack: () => setCurrentScreen('Interests'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Travellers')
         }}
         onBack={() => setCurrentScreen('Interests')}
-        onNext={() => setCurrentScreen('Summary')}
+        onNext={() => setCurrentScreen('Travellers')}
       />
     );
   }

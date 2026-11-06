@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -26,6 +27,22 @@ export default function PlanMyDayTravelScreen({ navigation, onNext, onBack }) {
     setSelectedOption(id);
   };
 
+  const handleNext = () => {
+    if (onNext) {
+      onNext(selectedOption);
+    } else if (navigation && navigation.navigate) {
+      navigation.navigate('Travellers');
+    }
+  };
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (navigation && navigation.goBack) {
+      navigation.goBack();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF8F5" />
@@ -35,7 +52,7 @@ export default function PlanMyDayTravelScreen({ navigation, onNext, onBack }) {
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.backButton} 
-            onPress={onBack || (() => navigation?.goBack())}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={20} color="#1E293B" />
@@ -102,7 +119,7 @@ export default function PlanMyDayTravelScreen({ navigation, onNext, onBack }) {
         {/* Continue Button */}
         <TouchableOpacity
           style={styles.continueButton}
-          onPress={onNext || (() => navigation?.navigate('Summary'))}
+          onPress={handleNext}
           activeOpacity={0.8}
         >
           <Text style={styles.continueButtonText}>Continue</Text>
@@ -118,6 +135,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F5',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   scrollContainer: {
     paddingHorizontal: 24,
@@ -148,7 +166,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 26,
-    fontFamily: 'serif',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: 'bold',
     color: '#1A3636',
   },
@@ -192,7 +210,7 @@ const styles = StyleSheet.create({
   },
   questionText: {
     fontSize: 28,
-    fontFamily: 'serif',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '600',
     color: '#1A3636',
     marginBottom: 6,
