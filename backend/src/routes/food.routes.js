@@ -19,4 +19,10 @@ router.get('/items', foodController.getFoodItems);
 // 3. GET /api/food/items/:id - Get single food item by ID with category info
 router.get('/items/:id', foodController.getFoodItemById);
 
+// 5. POST /api/food/orders - Create in-room dining order
+router.post('/orders', foodController.createOrder);
+
+// 6. GET /api/food/orders/:id - Get single order by ID
+router.get('/orders/:id', foodController.getOrderById);
+
 module.exports = router;
