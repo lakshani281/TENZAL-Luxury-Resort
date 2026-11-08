@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,8 +11,16 @@ import {
   Platform,
   Modal,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  getCategories,
+  getDailySpecials,
+  getFoodItems,
+  createOrder,
+} from '../services/foodApi';
 
 // Soft Coastal Luxury Theme
 const THEME = {
@@ -33,211 +41,28 @@ const DELIVERY_ROOMS = [
   { id: 'room-5', name: 'Indian Ocean View Room — Room 5', short: 'Room 5' },
 ];
 
-// Sample culinary data with realistic demonstration LKR prices
-const SAMPLE_SPECIALS = [
-  {
-    id: 'sp1',
-    name: 'Ceylon Spiced Rock Lobster',
-    description: 'Fresh southern ocean rock lobster poached in wild garlic butter with lemongrass essence',
-    category: 'Dinner',
-    price: 16500,
-    prepTime: '~25 min (Demo Est.)',
-    badge: "Chef's Signature",
-    image: 'https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?q=80&w=800&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Southern Coast Rock Lobster', 'Wild Highland Garlic', 'Lemongrass Infused Butter', 'Organic Baby Greens'],
-  },
-  {
-    id: 'sp2',
-    name: 'Charred Wagyu Striploin 8oz',
-    description: 'Grain-fed Wagyu beef served with truffle potato mousseline and charred mountain asparagus',
-    category: 'Dinner',
-    price: 21500,
-    prepTime: '~30 min (Demo Est.)',
-    badge: 'Reserve Cut',
-    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=800&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Australian Wagyu (MBS 7+)', 'Black Truffle Puree', 'Kandyan Asparagus', 'Port Wine Jus'],
-  },
-  {
-    id: 'sp3',
-    name: 'Tenzal Sunset Coconut Cooler',
-    description: 'Chilled king coconut water infused with crushed lychee, kaffir lime and wild hill mint',
-    category: 'Drinks',
-    price: 3800,
-    prepTime: '~8 min (Demo Est.)',
-    badge: 'Signature Elixir',
-    image: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?q=80&w=800&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Fresh King Coconut Water', 'Organic Lychee', 'Kaffir Lime', 'Garden Mint Sprig'],
-  },
-];
-
-const SAMPLE_MENU_ITEMS = [
-  {
-    id: 'm1',
-    name: 'Tenzal Tropical Acai Bowl',
-    category: 'Breakfast',
-    price: 4200,
-    prepTime: '~12 min (Demo Est.)',
-    subtitle: 'Organic berries, toasted coconut & honey',
-    image: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Organic Acai Puree', 'Highland Strawberries', 'Chia Seeds', 'Wild Forest Honey'],
-  },
-  {
-    id: 'm2',
-    name: 'Brioche French Toast',
-    category: 'Breakfast',
-    price: 4800,
-    prepTime: '~15 min (Demo Est.)',
-    subtitle: 'Wild honeycomb, mascarpone & fresh fig',
-    image: 'https://images.unsplash.com/photo-1484723091739-30a097e8f929?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Artisan Brioche', 'Haputale Mountain Honey', 'Vanilla Bean Mascarpone', 'Poached Berries'],
-  },
-  {
-    id: 'm3',
-    name: 'Eggs Benedict Royal',
-    category: 'Breakfast',
-    price: 5600,
-    prepTime: '~18 min (Demo Est.)',
-    subtitle: 'Norwegian smoked salmon & yuzu hollandaise',
-    image: 'https://images.unsplash.com/photo-1608039829572-78524f79c4c7?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Free-Range Poached Eggs', 'Smoked Salmon', 'English Muffin', 'Citrus Yuzu Hollandaise'],
-  },
-  {
-    id: 'm4',
-    name: 'Avocado Tartine Crisp',
-    category: 'Breakfast',
-    price: 4500,
-    prepTime: '~10 min (Demo Est.)',
-    subtitle: 'Artisan sourdough, poached egg & dukkah',
-    image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?q=80&w=600&auto=format&fit=crop',
-    isAvailable: false, // Sold Out
-    ingredients: ['Hass Avocado', 'Country Sourdough', 'Roasted Seeds', 'Chili Flakes'],
-  },
-  {
-    id: 'm5',
-    name: 'Citrus Poached Lobster Roll',
-    category: 'Lunch',
-    price: 9500,
-    prepTime: '~20 min (Demo Est.)',
-    subtitle: 'Warm buttered brioche bun & chives',
-    image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Poached Lobster Chunks', 'Japanese Mayo', 'Celery Salt', 'Truffle Fries'],
-  },
-  {
-    id: 'm6',
-    name: 'Wood-Fired Truffle Flatbread',
-    category: 'Lunch',
-    price: 7200,
-    prepTime: '~15 min (Demo Est.)',
-    subtitle: 'Wild chanterelles, fontina & thyme',
-    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Sourdough Base', 'Wild Forest Mushrooms', 'Fontina Cheese', 'White Truffle Oil'],
-  },
-  {
-    id: 'm7',
-    name: 'Wagyu Smash Burger',
-    category: 'Lunch',
-    price: 8400,
-    prepTime: '~18 min (Demo Est.)',
-    subtitle: 'Aged gouda, house pickle & herb fries',
-    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Double Wagyu Patties', 'Aged Gouda', 'Caramelized Onion Jam', 'Brioche Bun'],
-  },
-  {
-    id: 'm8',
-    name: 'Mezze Platter Royale',
-    category: 'Lunch',
-    price: 6200,
-    prepTime: '~14 min (Demo Est.)',
-    subtitle: 'Whipped feta, kalamata olives, warm pita',
-    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?q=80&w=600&auto=format&fit=crop',
-    isAvailable: false, // Sold Out
-    ingredients: ['Smoked Eggplant Dip', 'Kalamata Olives', 'Artisan Falafel', 'Warm Zaatar Pita'],
-  },
-  {
-    id: 'm9',
-    name: 'Black Truffle Risotto',
-    category: 'Dinner',
-    price: 11500,
-    prepTime: '~22 min (Demo Est.)',
-    subtitle: 'Carnaroli rice & 24-month Parmigiano',
-    image: 'https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Carnaroli Rice', 'Black Truffle Shavings', 'Brown Butter', 'Parmigiano Reggiano'],
-  },
-  {
-    id: 'm10',
-    name: 'Herb-Crusted Coral Grouper',
-    category: 'Dinner',
-    price: 13800,
-    prepTime: '~24 min (Demo Est.)',
-    subtitle: 'Saffron emulsion, baby leeks & potato',
-    image: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Wild Reef Grouper', 'Pistachio Herb Crust', 'Saffron Cream Sauce', 'Baby Fennel'],
-  },
-  {
-    id: 'm11',
-    name: 'Slow-Braised Lamb Shank',
-    category: 'Dinner',
-    price: 14500,
-    prepTime: '~35 min (Demo Est.)',
-    subtitle: 'Rosemary red wine reduction & mash',
-    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=600&auto=format&fit=crop',
-    isAvailable: false, // Sold Out
-    ingredients: ['Prime Lamb Shank', 'Cabernet Sauvignon Jus', 'Garlic Mousseline', 'Glazed Carrots'],
-  },
-  {
-    id: 'm12',
-    name: 'Artisan Cold Brew Tonic',
-    category: 'Drinks',
-    price: 2400,
-    prepTime: '~5 min (Demo Est.)',
-    subtitle: 'Single origin highland espresso & citrus',
-    image: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['18-Hour Cold Brew', 'Artisan Tonic Water', 'Dehydrated Orange Wheel', 'Thyme Sprig'],
-  },
-  {
-    id: 'm13',
-    name: 'Lemongrass Ginger Elixir',
-    category: 'Drinks',
-    price: 2800,
-    prepTime: '~6 min (Demo Est.)',
-    subtitle: 'Fresh galangal, forest honey & sparkling soda',
-    image: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?q=80&w=600&auto=format&fit=crop',
-    isAvailable: true,
-    ingredients: ['Fresh Lemongrass', 'Ceylon Ginger Juice', 'Wild Mountain Honey', 'Sparkling Mineral Water'],
-  },
-  {
-    id: 'm14',
-    name: 'Dragon Fruit Mint Crush',
-    category: 'Drinks',
-    price: 3200,
-    prepTime: '~5 min (Demo Est.)',
-    subtitle: 'Chilled pink pitaya, lime & garden mint',
-    image: 'https://images.unsplash.com/photo-1553530666-ba11a7da3888?q=80&w=600&auto=format&fit=crop',
-    isAvailable: false, // Sold Out
-    ingredients: ['Fresh Pink Dragon Fruit', 'Crushed Ice', 'Lime Juice', 'Organic Cane Syrup'],
-  },
-];
-
 const CATEGORIES = ['All', 'Breakfast', 'Lunch', 'Dinner', 'Drinks'];
 
 export default function FoodMenuScreen({ navigation, onBack }) {
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [cart, setCart] = useState([
-    { item: SAMPLE_SPECIALS[0], quantity: 1 },
-    { item: SAMPLE_SPECIALS[2], quantity: 2 },
-  ]);
+
+  // Live API States (Student ID: 22CIS0328)
+  const [categories, setCategories] = useState(['All', 'Breakfast', 'Lunch', 'Dinner', 'Drinks', 'Desserts']);
+  const [specials, setSpecials] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [partialError, setPartialError] = useState(null);
+
+  // Synchronous concurrency lock to prevent overlapping menu loads
+  const isLoadingMenuRef = useRef(false);
+
+  // Mounted-state ref to prevent state updates if component unmounts during async calls
+  const isMountedRef = useRef(true);
+
+  // Cart state: empty array as required by Requirement 9 (no preloaded demo items)
+  const [cart, setCart] = useState([]);
   const [selectedFoodDetail, setSelectedFoodDetail] = useState(null);
   const [cartVisible, setCartVisible] = useState(false);
   const [orderConfirmedVisible, setOrderConfirmedVisible] = useState(false);
@@ -249,21 +74,94 @@ export default function FoodMenuScreen({ navigation, onBack }) {
   const [roomError, setRoomError] = useState(null);
   const [specialNote, setSpecialNote] = useState('');
 
-  // Active Order state: stores the confirmed order data object
-  // Initial demo state has no room pre-assigned, matching Requirement 7
-  const [activeOrder, setActiveOrder] = useState({
-    orderId: 'ORD-2026-HAP-048',
-    roomName: '',
-    roomNumber: '',
-    items: [
-      { name: 'Ceylon Spiced Rock Lobster', quantity: 1, price: 16500 },
-      { name: 'Tenzal Sunset Coconut Cooler', quantity: 2, price: 3800 },
-    ],
-    totalLKR: 26510,
-    specialNote: '',
-    status: 'Kitchen Simulation',
-    estimatedDelivery: '~25 - 30 minutes',
-  });
+  // Active Order state: stores the confirmed order data object from PostgreSQL
+  const [activeOrder, setActiveOrder] = useState(null);
+
+  // Order Placement submission states
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
+
+  // Load categories, specials, and menu items from backend with Promise.allSettled
+  const loadMenuData = useCallback(async (isRefresh = false) => {
+    // Synchronous concurrency guard: reject duplicate calls while a request is in flight
+    if (isLoadingMenuRef.current) return;
+    isLoadingMenuRef.current = true;
+
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setLoadError(null);
+    setPartialError(null);
+
+    try {
+      const [catResult, specialsResult, itemsResult] = await Promise.allSettled([
+        getCategories(),
+        getDailySpecials(),
+        getFoodItems({ available: 'all' }),
+      ]);
+
+      // If component unmounted while requests were in flight, abort state updates
+      if (!isMountedRef.current) return;
+
+      let anySuccess = false;
+      const errors = [];
+
+      // 1. Process Categories (Ensure 'All' is first, followed by DB categories)
+      if (catResult.status === 'fulfilled' && Array.isArray(catResult.value) && catResult.value.length > 0) {
+        const names = catResult.value
+          .map((c) => (typeof c === 'string' ? c : c.name))
+          .filter((n) => Boolean(n) && n.toLowerCase() !== 'all');
+        setCategories(['All', ...names]);
+        anySuccess = true;
+      } else if (catResult.status === 'rejected') {
+        errors.push(`Categories: ${catResult.reason?.message || 'Failed to load'}`);
+      }
+
+      // 2. Process Daily Specials
+      if (specialsResult.status === 'fulfilled') {
+        setSpecials(Array.isArray(specialsResult.value) ? specialsResult.value : []);
+        anySuccess = true;
+      } else {
+        errors.push(`Specials: ${specialsResult.reason?.message || 'Failed to load'}`);
+      }
+
+      // 3. Process Menu Items
+      if (itemsResult.status === 'fulfilled') {
+        setMenuItems(Array.isArray(itemsResult.value) ? itemsResult.value : []);
+        anySuccess = true;
+      } else {
+        errors.push(`Menu Dishes: ${itemsResult.reason?.message || 'Failed to load'}`);
+      }
+
+      // Handle failure modes
+      if (!anySuccess && errors.length > 0) {
+        setLoadError(errors.join('\n'));
+      } else if (errors.length > 0) {
+        setPartialError(errors.join(' • '));
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        console.error('[FoodMenuScreen] Unexpected error loading menu data:', err);
+        setLoadError('An unexpected error occurred while loading menu data. Please retry.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+      isLoadingMenuRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    loadMenuData(false);
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [loadMenuData]);
 
   // Cart totals in LKR (Demonstration estimate)
   const totalCartCount = cart.reduce((acc, curr) => acc + curr.quantity, 0);
@@ -273,13 +171,17 @@ export default function FoodMenuScreen({ navigation, onBack }) {
 
   const filteredSpecials =
     selectedCategory === 'All'
-      ? SAMPLE_SPECIALS
-      : SAMPLE_SPECIALS.filter((item) => item.category === selectedCategory);
+      ? specials
+      : specials.filter(
+          (item) => item.category && item.category.toLowerCase() === selectedCategory.toLowerCase()
+        );
 
   const filteredMenuItems =
     selectedCategory === 'All'
-      ? SAMPLE_MENU_ITEMS
-      : SAMPLE_MENU_ITEMS.filter((item) => item.category === selectedCategory);
+      ? menuItems
+      : menuItems.filter(
+          (item) => item.category && item.category.toLowerCase() === selectedCategory.toLowerCase()
+        );
 
   const handleAddToCart = (item) => {
     if (!item.isAvailable) return;
@@ -311,34 +213,90 @@ export default function FoodMenuScreen({ navigation, onBack }) {
     );
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    if (isPlacingOrder) return; // Prevent duplicate submissions
+
     if (!selectedDeliveryRoom) {
       setRoomError('Please select your resort delivery room (Room 3, 4, or 5) before ordering.');
       return;
     }
     setRoomError(null);
+    setCheckoutError(null);
 
     const matchedRoom = DELIVERY_ROOMS.find((rm) => rm.name === selectedDeliveryRoom);
+    if (!matchedRoom) {
+      setRoomError('Please select a valid resort delivery room (Room 3, 4, or 5).');
+      return;
+    }
 
-    // Save selected room name, room number, items, and total into the single order data object
-    const confirmedOrder = {
-      orderId: 'ORD-2026-HAP-048',
-      roomName: selectedDeliveryRoom,
-      roomNumber: matchedRoom ? matchedRoom.short : '',
-      items: cart.map((line) => ({
-        name: line.item.name,
-        quantity: line.quantity,
-        price: line.item.price,
-      })),
-      totalLKR: grandTotalLKR,
-      specialNote: specialNote,
-      status: 'Kitchen Simulation',
-      estimatedDelivery: '~25 - 30 minutes',
-    };
+    if (!cart || cart.length === 0) {
+      setCheckoutError('Your food tray is empty. Add at least one dish before ordering.');
+      return;
+    }
 
-    setActiveOrder(confirmedOrder);
-    setCartVisible(false);
-    setOrderConfirmedVisible(true);
+    // Map cart items: strictly send only item_id and quantity (never send client prices or totals)
+    const payloadItems = cart.map((line) => ({
+      item_id: Number(line.item.item_id || line.item.id),
+      quantity: line.quantity,
+    }));
+
+    setIsPlacingOrder(true);
+
+    try {
+      const orderPayload = {
+        room_number: matchedRoom.short,
+        room_name: matchedRoom.name,
+        special_note: specialNote ? specialNote.trim() : undefined,
+        items: payloadItems,
+      };
+
+      const backendOrder = await createOrder(orderPayload);
+
+      // Successfully placed real order in PostgreSQL
+      setActiveOrder({
+        orderId: backendOrder.order_code,
+        orderCode: backendOrder.order_code,
+        roomName: backendOrder.room_name,
+        roomNumber: backendOrder.room_number,
+        items: Array.isArray(backendOrder.items)
+          ? backendOrder.items.map((it) => ({
+              name: it.item_name,
+              quantity: it.quantity,
+              price: it.unit_price,
+              lineTotal: it.line_total,
+            }))
+          : [],
+        subtotalLKR: backendOrder.subtotal,
+        serviceChargeLKR: backendOrder.service_charge,
+        totalLKR: backendOrder.total_amount,
+        specialNote: backendOrder.special_note || '',
+        status: backendOrder.status || 'Pending',
+        estimatedDelivery: `~${backendOrder.estimated_delivery_minutes || 30} minutes`,
+        estimatedDeliveryMinutes: backendOrder.estimated_delivery_minutes || 30,
+        createdAt: backendOrder.created_at,
+        raw: backendOrder,
+      });
+
+      // Clear cart and reset form only after confirmed success
+      setCart([]);
+      setSelectedDeliveryRoom('');
+      setSpecialNote('');
+      setRoomError(null);
+      setCheckoutError(null);
+
+      // Close cart tray and open confirmation modal
+      setCartVisible(false);
+      setOrderConfirmedVisible(true);
+    } catch (error) {
+      console.error('[FoodMenuScreen] Order creation failed:', error);
+      // Keep cart, room, and special instructions intact on failure
+      const errorMsg =
+        error.message ||
+        'Unable to place order. Please check your network connection and try again.';
+      setCheckoutError(errorMsg);
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
   const handleNavPress = (screenTarget) => {
@@ -434,8 +392,8 @@ export default function FoodMenuScreen({ navigation, onBack }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryScroll}
         >
-          {CATEGORIES.map((cat) => {
-            const isSelected = selectedCategory === cat;
+          {categories.map((cat) => {
+            const isSelected = selectedCategory.toLowerCase() === cat.toLowerCase();
             return (
               <TouchableOpacity
                 key={cat}
@@ -452,8 +410,52 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         </ScrollView>
       </View>
 
-      {/* MAIN SCROLLABLE CONTENT */}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* MAIN SCROLLABLE CONTENT WITH LOADING, ERROR & PULL-TO-REFRESH */}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={THEME.oceanBlue} />
+          <Text style={styles.loadingText}>Curating artisanal highland menu...</Text>
+          <Text style={styles.loadingSubtext}>Connecting to TENZAL Dining Service</Text>
+        </View>
+      ) : loadError && specials.length === 0 && menuItems.length === 0 ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline-outline" size={52} color={THEME.oceanBlue} />
+          <Text style={styles.errorTitle}>Unable to Connect to Dining Service</Text>
+          <Text style={styles.errorMessage}>{loadError}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => loadMenuData(false)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="reload" size={16} color={THEME.white} />
+            <Text style={styles.retryButtonText}>Retry Connection</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => loadMenuData(true)}
+              colors={[THEME.oceanBlue]}
+              tintColor={THEME.oceanBlue}
+            />
+          }
+        >
+          {/* Partial failure notice if one section failed while others succeeded */}
+          {partialError && (
+            <View style={styles.partialErrorBanner}>
+              <Ionicons name="alert-circle-outline" size={14} color="#92400E" />
+              <Text style={styles.partialErrorText} numberOfLines={2}>
+                Notice: {partialError}
+              </Text>
+              <TouchableOpacity onPress={() => loadMenuData(false)} style={styles.partialRetryBtn}>
+                <Text style={styles.partialRetryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         {/* 3. TODAY'S SPECIALS (Horizontal Carousel) */}
         {filteredSpecials.length > 0 && (
           <View style={styles.specialsSection}>
@@ -527,83 +529,94 @@ export default function FoodMenuScreen({ navigation, onBack }) {
             <Text style={styles.itemCountText}>{filteredMenuItems.length} dishes</Text>
           </View>
 
-          <View style={styles.gridContainer}>
-            {filteredMenuItems.map((dish) => {
-              const isAvailable = dish.isAvailable;
-              return (
-                <TouchableOpacity
-                  key={dish.id}
-                  style={[styles.gridCard, !isAvailable && styles.gridCardSoldOut]}
-                  activeOpacity={0.88}
-                  onPress={() => setSelectedFoodDetail(dish)}
-                >
-                  <View style={styles.gridImageContainer}>
-                    <Image
-                      source={{ uri: dish.image }}
-                      style={[styles.gridImage, !isAvailable && styles.gridImageMuted]}
-                      resizeMode="cover"
-                    />
+          {filteredMenuItems.length === 0 ? (
+            <View style={styles.emptyMenuBox}>
+              <Ionicons name="restaurant-outline" size={36} color={THEME.mutedSlate} />
+              <Text style={styles.emptyMenuTitle}>No dishes found in {selectedCategory}</Text>
+              <Text style={styles.emptyMenuSub}>
+                Please select another culinary category or pull down to refresh.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.gridContainer}>
+              {filteredMenuItems.map((dish) => {
+                const isAvailable = dish.isAvailable;
+                return (
+                  <TouchableOpacity
+                    key={dish.id}
+                    style={[styles.gridCard, !isAvailable && styles.gridCardSoldOut]}
+                    activeOpacity={0.88}
+                    onPress={() => setSelectedFoodDetail(dish)}
+                  >
+                    <View style={styles.gridImageContainer}>
+                      <Image
+                        source={{ uri: dish.image }}
+                        style={[styles.gridImage, !isAvailable && styles.gridImageMuted]}
+                        resizeMode="cover"
+                      />
 
-                    {/* Sold Out Overlay Badge */}
-                    {!isAvailable && (
-                      <View style={styles.soldOutOverlay}>
-                        <View style={styles.soldOutBadge}>
-                          <Ionicons name="close-circle-outline" size={12} color={THEME.white} style={{ marginRight: 3 }} />
-                          <Text style={styles.soldOutText}>Sold Out</Text>
+                      {/* Sold Out Overlay Badge */}
+                      {!isAvailable && (
+                        <View style={styles.soldOutOverlay}>
+                          <View style={styles.soldOutBadge}>
+                            <Ionicons name="close-circle-outline" size={12} color={THEME.white} style={{ marginRight: 3 }} />
+                            <Text style={styles.soldOutText}>Sold Out</Text>
+                          </View>
                         </View>
-                      </View>
-                    )}
+                      )}
 
-                    {/* Preparation Time Pill */}
-                    {isAvailable && (
-                      <View style={styles.prepPill}>
-                        <Ionicons name="time-outline" size={10} color={THEME.darkSlate} />
-                        <Text style={styles.prepText}>{dish.prepTime}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.gridCardBody}>
-                    <Text style={styles.gridCardCategory}>{dish.category}</Text>
-                    <Text style={styles.gridCardName} numberOfLines={2}>
-                      {dish.name}
-                    </Text>
-                    <Text style={styles.gridCardSubtitle} numberOfLines={1}>
-                      {dish.subtitle}
-                    </Text>
-
-                    <View style={styles.gridCardFooter}>
-                      <View>
-                        <Text style={styles.demoPriceSmallLabel}>DEMO</Text>
-                        <Text style={[styles.gridPrice, !isAvailable && styles.gridPriceMuted]}>
-                          LKR {dish.price.toLocaleString()}
-                        </Text>
-                      </View>
-
-                      {isAvailable ? (
-                        <TouchableOpacity
-                          style={styles.gridAddButton}
-                          activeOpacity={0.85}
-                          onPress={() => handleAddToCart(dish)}
-                        >
-                          <Ionicons name="add" size={14} color={THEME.white} />
-                          <Text style={styles.gridAddButtonText}>Add</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={styles.gridDisabledButton}>
-                          <Text style={styles.gridDisabledButtonText}>Sold Out</Text>
+                      {/* Preparation Time Pill */}
+                      {isAvailable && (
+                        <View style={styles.prepPill}>
+                          <Ionicons name="time-outline" size={10} color={THEME.darkSlate} />
+                          <Text style={styles.prepText}>{dish.prepTime}</Text>
                         </View>
                       )}
                     </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+
+                    <View style={styles.gridCardBody}>
+                      <Text style={styles.gridCardCategory}>{dish.category}</Text>
+                      <Text style={styles.gridCardName} numberOfLines={2}>
+                        {dish.name}
+                      </Text>
+                      <Text style={styles.gridCardSubtitle} numberOfLines={1}>
+                        {dish.subtitle}
+                      </Text>
+
+                      <View style={styles.gridCardFooter}>
+                        <View>
+                          <Text style={styles.demoPriceSmallLabel}>DEMO</Text>
+                          <Text style={[styles.gridPrice, !isAvailable && styles.gridPriceMuted]}>
+                            LKR {dish.price.toLocaleString()}
+                          </Text>
+                        </View>
+
+                        {isAvailable ? (
+                          <TouchableOpacity
+                            style={styles.gridAddButton}
+                            activeOpacity={0.85}
+                            onPress={() => handleAddToCart(dish)}
+                          >
+                            <Ionicons name="add" size={14} color={THEME.white} />
+                            <Text style={styles.gridAddButtonText}>Add</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={styles.gridDisabledButton}>
+                            <Text style={styles.gridDisabledButtonText}>Sold Out</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         <View style={{ height: 28 }} />
       </ScrollView>
+      )}
 
       {/* 5. FOOD DETAILS MODAL */}
       <Modal
@@ -813,16 +826,24 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                       onChangeText={setSpecialNote}
                       style={styles.notesInput}
                     />
+
+                    {/* Checkout Error Banner if order submission fails */}
+                    {checkoutError && (
+                      <View style={styles.checkoutErrorBanner}>
+                        <Ionicons name="alert-circle" size={16} color="#DC2626" />
+                        <Text style={styles.checkoutErrorText}>{checkoutError}</Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Bill Summary */}
                   <View style={styles.billBox}>
                     <View style={styles.billRow}>
-                      <Text style={styles.billLabel}>Subtotal (Demonstration Items)</Text>
+                      <Text style={styles.billLabel}>Subtotal</Text>
                       <Text style={styles.billVal}>LKR {subtotalLKR.toLocaleString()}</Text>
                     </View>
                     <View style={styles.billRow}>
-                      <Text style={styles.billLabel}>Estimated Service Charge (10% Demonstration Est.)</Text>
+                      <Text style={styles.billLabel}>Resort Service Charge (10%)</Text>
                       <Text style={styles.billVal}>LKR {serviceChargeLKR.toLocaleString()}</Text>
                     </View>
                     <View style={[styles.billRow, styles.totalRow]}>
@@ -830,26 +851,39 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                       <Text style={styles.totalVal}>LKR {grandTotalLKR.toLocaleString()}</Text>
                     </View>
                     <Text style={styles.demoBillNotice}>
-                      * Note: 10% service charge and total are demonstration estimates for Student ID 22CIS0328.
+                      * All prices in LKR. In-room dining charge billed to assigned room folio.
                     </Text>
                   </View>
 
                   {/* Checkout Button */}
                   <TouchableOpacity
-                    style={[styles.checkoutBtn, !selectedDeliveryRoom && styles.checkoutBtnPending]}
-                    activeOpacity={0.85}
+                    style={[
+                      styles.checkoutBtn,
+                      (!selectedDeliveryRoom || isPlacingOrder) && styles.checkoutBtnPending,
+                    ]}
+                    activeOpacity={isPlacingOrder ? 1 : 0.85}
+                    disabled={isPlacingOrder || !selectedDeliveryRoom}
                     onPress={handleCheckout}
                   >
-                    <Ionicons
-                      name={selectedDeliveryRoom ? 'checkmark-circle' : 'alert-circle-outline'}
-                      size={18}
-                      color={THEME.white}
-                    />
-                    <Text style={styles.checkoutBtnText}>
-                      {selectedDeliveryRoom
-                        ? `Place Order · LKR ${grandTotalLKR.toLocaleString()}`
-                        : 'Select Delivery Room to Order'}
-                    </Text>
+                    {isPlacingOrder ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <ActivityIndicator size="small" color={THEME.white} />
+                        <Text style={styles.checkoutBtnText}>Placing In-Room Order...</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={selectedDeliveryRoom ? 'checkmark-circle' : 'alert-circle-outline'}
+                          size={18}
+                          color={THEME.white}
+                        />
+                        <Text style={styles.checkoutBtnText}>
+                          {selectedDeliveryRoom
+                            ? `Place Order · LKR ${grandTotalLKR.toLocaleString()}`
+                            : 'Select Delivery Room to Order'}
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </>
               )}
@@ -863,12 +897,7 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         visible={orderConfirmedVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => {
-          setOrderConfirmedVisible(false);
-          setCart([]);
-          setSelectedDeliveryRoom('');
-          setSpecialNote('');
-        }}
+        onRequestClose={() => setOrderConfirmedVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmationCard}>
@@ -877,7 +906,7 @@ export default function FoodMenuScreen({ navigation, onBack }) {
             </View>
 
             <Text style={styles.confirmHeading}>Order Confirmed!</Text>
-            <Text style={styles.orderNumber}>ORDER #{activeOrder?.orderId || 'ORD-2026-HAP-048'} (DEMO)</Text>
+            <Text style={styles.orderNumber}>ORDER #{activeOrder?.orderCode || activeOrder?.orderId || 'PENDING'}</Text>
             
             <View style={styles.confirmRoomBox}>
               <Text style={styles.confirmRoomLabel}>DELIVERING TO</Text>
@@ -889,22 +918,17 @@ export default function FoodMenuScreen({ navigation, onBack }) {
             <View style={styles.etaBox}>
               <Ionicons name="time-outline" size={18} color={THEME.oceanBlue} />
               <Text style={styles.etaText}>
-                Estimated Delivery: {activeOrder?.estimatedDelivery || '~25 - 30 minutes'} (Demo)
+                Estimated Delivery: {activeOrder?.estimatedDelivery || '~30 minutes'}
               </Text>
             </View>
 
             <Text style={styles.confirmDemoDisclaimer}>
-              Demonstration Simulation: In a production environment, order status updates are sent to the guest terminal and kitchen display.
+              Your order has been recorded in the resort kitchen system. Status: {activeOrder?.status || 'Pending'}.
             </Text>
 
             <TouchableOpacity
               style={styles.doneBtn}
-              onPress={() => {
-                setOrderConfirmedVisible(false);
-                setCart([]);
-                setSelectedDeliveryRoom('');
-                setSpecialNote('');
-              }}
+              onPress={() => setOrderConfirmedVisible(false)}
             >
               <Text style={styles.doneBtnText}>Back to Food Menu</Text>
             </TouchableOpacity>
@@ -928,40 +952,80 @@ export default function FoodMenuScreen({ navigation, onBack }) {
               >
                 <Ionicons name="close" size={20} color={THEME.darkSlate} />
               </TouchableOpacity>
-              <Text style={styles.modalHeaderTitle}>Active Demonstration Orders</Text>
+              <Text style={styles.modalHeaderTitle}>My In-Room Orders</Text>
               <View style={{ width: 36 }} />
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 18 }}>
-              <View style={styles.activeOrderCard}>
-                <View style={styles.orderHeaderRow}>
-                  <Text style={styles.orderCode}>{activeOrder?.orderId || 'ORD-2026-HAP-048'}</Text>
-                  <View style={styles.statusPill}>
-                    <Text style={styles.statusPillText}>{activeOrder?.status || 'Kitchen Simulation'}</Text>
+              {activeOrder ? (
+                <View style={styles.activeOrderCard}>
+                  <View style={styles.orderHeaderRow}>
+                    <Text style={styles.orderCode}>{activeOrder.orderCode || activeOrder.orderId}</Text>
+                    <View style={styles.statusPill}>
+                      <Text style={styles.statusPillText}>{activeOrder.status || 'Pending'}</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.orderItemsPreview}>
+                    {activeOrder.items && activeOrder.items.length > 0
+                      ? activeOrder.items
+                          .map(
+                            (it) =>
+                              `• ${it.name} x${it.quantity} (LKR ${(
+                                it.lineTotal || it.price * it.quantity
+                              ).toLocaleString()})`
+                          )
+                          .join('\n')
+                      : '• No items in active order'}
+                  </Text>
+
+                  {activeOrder.specialNote && activeOrder.specialNote.trim() ? (
+                    <Text style={styles.orderSpecialNote}>
+                      Note: {activeOrder.specialNote}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.orderFinancialSummary}>
+                    <View style={styles.orderFinanceRow}>
+                      <Text style={styles.orderFinanceLabel}>Subtotal</Text>
+                      <Text style={styles.orderFinanceVal}>
+                        LKR {activeOrder.subtotalLKR ? activeOrder.subtotalLKR.toLocaleString() : '0'}
+                      </Text>
+                    </View>
+                    <View style={styles.orderFinanceRow}>
+                      <Text style={styles.orderFinanceLabel}>Resort Service Charge (10%)</Text>
+                      <Text style={styles.orderFinanceVal}>
+                        LKR {activeOrder.serviceChargeLKR ? activeOrder.serviceChargeLKR.toLocaleString() : '0'}
+                      </Text>
+                    </View>
+                    <View style={[styles.orderFinanceRow, { marginTop: 4 }]}>
+                      <Text style={[styles.orderFinanceLabel, { fontWeight: '700', color: THEME.darkSlate }]}>
+                        Total Amount
+                      </Text>
+                      <Text style={[styles.orderFinanceVal, { fontWeight: '800', color: THEME.oceanBlue }]}>
+                        LKR {activeOrder.totalLKR ? activeOrder.totalLKR.toLocaleString() : '0'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.orderFooterRow}>
+                    <Text style={styles.orderDeliveringTo}>
+                      Destination: {activeOrder.roomName ? activeOrder.roomName : (activeOrder.roomNumber || 'Room not assigned')}
+                    </Text>
+                    <Text style={styles.orderPrice}>
+                      ETA: {activeOrder.estimatedDelivery || '~30 min'}
+                    </Text>
                   </View>
                 </View>
-
-                <Text style={styles.orderItemsPreview}>
-                  {activeOrder?.items && activeOrder.items.length > 0
-                    ? activeOrder.items.map((it) => `• ${it.name} x${it.quantity}`).join('\n')
-                    : '• No items in active order'}
-                </Text>
-
-                {activeOrder?.specialNote && activeOrder.specialNote.trim() ? (
-                  <Text style={styles.orderSpecialNote}>
-                    Note: {activeOrder.specialNote}
-                  </Text>
-                ) : null}
-
-                <View style={styles.orderFooterRow}>
-                  <Text style={styles.orderDeliveringTo}>
-                    Destination: {activeOrder?.roomName ? activeOrder.roomName : 'Room not assigned'}
-                  </Text>
-                  <Text style={styles.orderPrice}>
-                    LKR {activeOrder?.totalLKR ? activeOrder.totalLKR.toLocaleString() : '26,510'} (Demo)
+              ) : (
+                <View style={styles.emptyOrdersBox}>
+                  <Ionicons name="receipt-outline" size={48} color={THEME.sandBeige} />
+                  <Text style={styles.emptyOrdersTitle}>No active in-room orders</Text>
+                  <Text style={styles.emptyOrdersSub}>
+                    Select culinary dishes from the menu to build your in-room dining order. Real-time kitchen tracking will appear here.
                   </Text>
                 </View>
-              </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1971,5 +2035,173 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: THEME.mutedSlate,
     marginTop: 3,
+  },
+  loadingContainer: {
+    paddingVertical: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.darkSlate,
+  },
+  loadingSubtext: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+  },
+  errorContainer: {
+    paddingHorizontal: 28,
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: THEME.darkSlate,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 320,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.oceanBlue,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    gap: 6,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  partialErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  partialErrorText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  partialRetryBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F59E0B',
+    borderRadius: 6,
+  },
+  partialRetryText: {
+    fontSize: 11,
+    color: THEME.white,
+    fontWeight: '700',
+  },
+  emptyMenuBox: {
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  emptyMenuTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.darkSlate,
+    textAlign: 'center',
+  },
+  emptyMenuSub: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
+  },
+  checkoutErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  checkoutErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991B1B',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  orderFinancialSummary: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: THEME.sandBeige,
+    paddingVertical: 8,
+    marginVertical: 4,
+    gap: 4,
+  },
+  orderFinanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  orderFinanceLabel: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+  },
+  orderFinanceVal: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.darkSlate,
+  },
+  orderEtaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+  },
+  emptyOrdersBox: {
+    paddingVertical: 44,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  emptyOrdersTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: THEME.darkSlate,
+    textAlign: 'center',
+  },
+  emptyOrdersSub: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
   },
 });
