@@ -5,9 +5,26 @@ import PlanMyDayBudgetScreen from './screens/PlanMyDayBudgetScreen';
 import PlanMyDayInterestsScreen from './screens/PlanMyDayInterestsScreen';
 import PlanMyDayTravelScreen from './screens/PlanMyDayTravelScreen';
 import PlanMyDayTravellersScreen from './screens/PlanMyDayTravellersScreen';
+import PlanMyDaySummaryScreen from './screens/PlanMyDaySummaryScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+
+  // Screen 7: Summary Screen (Generated Itinerary)
+  if (currentScreen === 'Summary') {
+    return (
+      <PlanMyDaySummaryScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Travellers'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Home')
+        }}
+        onBack={() => setCurrentScreen('Travellers')}
+        onEdit={() => setCurrentScreen('Form')}
+        onRegenerate={() => setCurrentScreen('Form')}
+        onSave={() => setCurrentScreen('Home')}
+      />
+    );
+  }
 
   // Screen 6: Travellers Screen (Step 5 of 5)
   if (currentScreen === 'Travellers') {
@@ -23,7 +40,7 @@ export default function App() {
     );
   }
 
-  // Screen 5: Travel Mode Screen (Getting Around - Step 4 of 5)
+  // Screen 5: Travel Mode Screen (Step 4 of 5)
   if (currentScreen === 'Travel') {
     return (
       <PlanMyDayTravelScreen
