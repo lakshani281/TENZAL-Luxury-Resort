@@ -75,7 +75,7 @@ export default function PlanMyDaySummaryScreen({
         {/* Timeline Itinerary Section */}
         <View style={styles.timelineContainer}>
           
-          {/* Timeline Item 1: Lipton's Seat */}
+          {/* Timeline Item 1: Lipton's Seat (Updated Working Image) */}
           <View style={styles.timelineRow}>
             <View style={styles.timeColumn}>
               <Text style={styles.timeText}>8:30 AM</Text>
@@ -87,7 +87,7 @@ export default function PlanMyDaySummaryScreen({
 
             <View style={styles.stopCard}>
               <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1546843905-bf2f476ca46d?q=80&w=600&auto=format&fit=crop' }}
+                source={{ uri: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?q=80&w=600&auto=format&fit=crop' }}
                 style={styles.stopImage}
                 resizeMode="cover"
               />
