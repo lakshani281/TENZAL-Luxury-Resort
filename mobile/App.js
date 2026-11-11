@@ -10,7 +10,7 @@ import PlanMyDaySummaryScreen from './screens/PlanMyDaySummaryScreen';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
 
-  // Screen 7: Summary Screen (Generated Itinerary)
+  // Screen 7: Summary Screen (Generated Itinerary & Login Modal Prompt)
   if (currentScreen === 'Summary') {
     return (
       <PlanMyDaySummaryScreen
@@ -21,7 +21,14 @@ export default function App() {
         onBack={() => setCurrentScreen('Travellers')}
         onEdit={() => setCurrentScreen('Form')}
         onRegenerate={() => setCurrentScreen('Form')}
-        onSave={() => setCurrentScreen('Home')}
+        onLogin={() => {
+          // Login screen එක හදපු ගමන් මෙතැනට redirect කරන්න පුළුවන්
+          console.log('Redirecting to Login Screen');
+        }}
+        onCreateAccount={() => {
+          // Register / Create Account screen එක හදපු ගමන් මෙතැනට redirect කරන්න පුළුවන්
+          console.log('Redirecting to Create Account Screen');
+        }}
       />
     );
   }
