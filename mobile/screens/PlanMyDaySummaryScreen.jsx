@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,16 +9,35 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PlanMyDaySummaryScreen({ navigation, onBack, onEdit, onRegenerate, onSave }) {
+export default function PlanMyDaySummaryScreen({ 
+  navigation, 
+  onBack, 
+  onEdit, 
+  onRegenerate, 
+  onLogin, 
+  onCreateAccount 
+}) {
+  // Modal visibility state
+  const [isLoginModalVisible, setIsLoginModalVisible] = useState(false);
+
   const handleBack = () => {
     if (onBack) {
       onBack();
     } else if (navigation && navigation.goBack) {
       navigation.goBack();
     }
+  };
+
+  const handleOpenLoginModal = () => {
+    setIsLoginModalVisible(true);
+  };
+
+  const handleCloseLoginModal = () => {
+    setIsLoginModalVisible(false);
   };
 
   return (
@@ -157,17 +176,84 @@ export default function PlanMyDaySummaryScreen({ navigation, onBack, onEdit, onR
           <TouchableOpacity 
             style={styles.primaryButton} 
             activeOpacity={0.85}
-            onPress={onSave}
+            onPress={handleOpenLoginModal}
           >
             <Text style={styles.primaryButtonText}>Save Plan</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.textLinkButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.textLinkButton} 
+            activeOpacity={0.7}
+            onPress={handleOpenLoginModal}
+          >
             <Text style={styles.textLinkText}>View Saved Plans</Text>
           </TouchableOpacity>
         </View>
 
       </ScrollView>
+
+      {/* Login Bottom Sheet Modal */}
+      <Modal
+        visible={isLoginModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCloseLoginModal}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdropTap} 
+            activeOpacity={1} 
+            onPress={handleCloseLoginModal} 
+          />
+          <View style={styles.modalContent}>
+            {/* Top Handle Line */}
+            <View style={styles.modalDragHandle} />
+
+            {/* Lock Icon */}
+            <View style={styles.lockIconContainer}>
+              <Ionicons name="lock-closed-outline" size={24} color="#357285" />
+            </View>
+
+            {/* Title & Subtitle */}
+            <Text style={styles.modalTitle}>Login to Continue</Text>
+            <Text style={styles.modalSubtitle}>Sign in to save this itinerary to your plans.</Text>
+
+            {/* Login Button */}
+            <TouchableOpacity 
+              style={styles.modalPrimaryBtn} 
+              activeOpacity={0.85}
+              onPress={() => {
+                handleCloseLoginModal();
+                if (onLogin) onLogin();
+              }}
+            >
+              <Text style={styles.modalPrimaryBtnText}>Login</Text>
+            </TouchableOpacity>
+
+            {/* Create Account Button */}
+            <TouchableOpacity 
+              style={styles.modalSecondaryBtn} 
+              activeOpacity={0.7}
+              onPress={() => {
+                handleCloseLoginModal();
+                if (onCreateAccount) onCreateAccount();
+              }}
+            >
+              <Text style={styles.modalSecondaryBtnText}>Create Account</Text>
+            </TouchableOpacity>
+
+            {/* Not Now Link */}
+            <TouchableOpacity 
+              style={styles.modalNotNowBtn} 
+              activeOpacity={0.7}
+              onPress={handleCloseLoginModal}
+            >
+              <Text style={styles.modalNotNowText}>Not Now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -426,5 +512,90 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#357285',
+  },
+
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdropTap: {
+    flex: 1,
+  },
+  modalContent: {
+    backgroundColor: '#FAF9F6',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 34,
+    alignItems: 'center',
+  },
+  modalDragHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: '#CBD5E0',
+    borderRadius: 2,
+    marginBottom: 20,
+  },
+  lockIconContainer: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E2F1F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A365D',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#718096',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalPrimaryBtn: {
+    width: '100%',
+    backgroundColor: '#357285',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSecondaryBtn: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#357285',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalSecondaryBtnText: {
+    color: '#357285',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalNotNowBtn: {
+    paddingVertical: 6,
+  },
+  modalNotNowText: {
+    color: '#718096',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
