@@ -21,7 +21,6 @@ export default function PlanMyDaySummaryScreen({
   onLogin, 
   onCreateAccount 
 }) {
-  // Modal visibility state
   const [isLoginModalVisible, setIsLoginModalVisible] = useState(false);
 
   const handleBack = () => {
@@ -76,14 +75,13 @@ export default function PlanMyDaySummaryScreen({
         {/* Timeline Itinerary Section */}
         <View style={styles.timelineContainer}>
           
-          {/* Timeline Item 1 */}
+          {/* Timeline Item 1: Lipton's Seat */}
           <View style={styles.timelineRow}>
             <View style={styles.timeColumn}>
               <Text style={styles.timeText}>8:30 AM</Text>
               <View style={styles.badgeNumberCircle}>
                 <Text style={styles.badgeNumberText}>1</Text>
               </View>
-              {/* Dotted Connecting Line */}
               <View style={styles.dashedLine} />
             </View>
 
@@ -104,7 +102,7 @@ export default function PlanMyDaySummaryScreen({
             </View>
           </View>
 
-          {/* Timeline Item 2 */}
+          {/* Timeline Item 2: Bambarakanda Falls */}
           <View style={styles.timelineRow}>
             <View style={styles.timeColumn}>
               <Text style={styles.timeText}>10:30 AM</Text>
@@ -115,7 +113,7 @@ export default function PlanMyDaySummaryScreen({
 
             <View style={styles.stopCard}>
               <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=600&auto=format&fit=crop' }}
+                source={{ uri: 'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?q=80&w=600&auto=format&fit=crop' }}
                 style={styles.stopImage}
                 resizeMode="cover"
               />
@@ -192,7 +190,7 @@ export default function PlanMyDaySummaryScreen({
 
       </ScrollView>
 
-      {/* Login Bottom Sheet Modal */}
+      {/* Login Bottom Sheet Modal Prompt */}
       <Modal
         visible={isLoginModalVisible}
         transparent={true}
@@ -206,19 +204,15 @@ export default function PlanMyDaySummaryScreen({
             onPress={handleCloseLoginModal} 
           />
           <View style={styles.modalContent}>
-            {/* Top Handle Line */}
             <View style={styles.modalDragHandle} />
 
-            {/* Lock Icon */}
             <View style={styles.lockIconContainer}>
               <Ionicons name="lock-closed-outline" size={24} color="#357285" />
             </View>
 
-            {/* Title & Subtitle */}
             <Text style={styles.modalTitle}>Login to Continue</Text>
             <Text style={styles.modalSubtitle}>Sign in to save this itinerary to your plans.</Text>
 
-            {/* Login Button */}
             <TouchableOpacity 
               style={styles.modalPrimaryBtn} 
               activeOpacity={0.85}
@@ -230,7 +224,6 @@ export default function PlanMyDaySummaryScreen({
               <Text style={styles.modalPrimaryBtnText}>Login</Text>
             </TouchableOpacity>
 
-            {/* Create Account Button */}
             <TouchableOpacity 
               style={styles.modalSecondaryBtn} 
               activeOpacity={0.7}
@@ -242,7 +235,6 @@ export default function PlanMyDaySummaryScreen({
               <Text style={styles.modalSecondaryBtnText}>Create Account</Text>
             </TouchableOpacity>
 
-            {/* Not Now Link */}
             <TouchableOpacity 
               style={styles.modalNotNowBtn} 
               activeOpacity={0.7}
@@ -513,8 +505,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#357285',
   },
-
-  /* Modal Styles */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
