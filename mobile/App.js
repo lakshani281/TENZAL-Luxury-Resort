@@ -8,9 +8,39 @@ import PlanMyDayTravellersScreen from './screens/PlanMyDayTravellersScreen';
 import PlanMyDaySummaryScreen from './screens/PlanMyDaySummaryScreen';
 import LoginScreen from './screens/LoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
+import PlanSavedScreen from './screens/PlanSavedScreen';
+import SavedPlansScreen from './screens/SavedPlansScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Saved Plans List Screen
+  if (currentScreen === 'SavedPlans') {
+    return (
+      <SavedPlansScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Summary'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
+        }}
+        onBack={() => setCurrentScreen('Summary')}
+        onSelectPlan={() => setCurrentScreen('Summary')}
+      />
+    );
+  }
+
+  // Plan Saved Confirmation Screen
+  if (currentScreen === 'PlanSaved') {
+    return (
+      <PlanSavedScreen
+        navigation={{
+          navigate: (screenName) => setCurrentScreen(screenName || 'SavedPlans'),
+        }}
+        onViewItinerary={() => setCurrentScreen('SavedPlans')}
+        onBackToHome={() => setCurrentScreen('Home')}
+      />
+    );
+  }
 
   // Create Account Screen
   if (currentScreen === 'CreateAccount') {
@@ -18,12 +48,13 @@ export default function App() {
       <CreateAccountScreen
         navigation={{
           goBack: () => setCurrentScreen('Summary'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'PlanSaved'),
         }}
         onBack={() => setCurrentScreen('Summary')}
         onSignUp={(userData) => {
           console.log('Account created:', userData);
-          setCurrentScreen('Summary');
+          setIsLoggedIn(true);
+          setCurrentScreen('PlanSaved');
         }}
         onSignInLink={() => setCurrentScreen('Login')}
       />
@@ -36,12 +67,13 @@ export default function App() {
       <LoginScreen
         navigation={{
           goBack: () => setCurrentScreen('Summary'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'PlanSaved'),
         }}
         onBack={() => setCurrentScreen('Summary')}
         onSignIn={(credentials) => {
           console.log('Signed in:', credentials);
-          setCurrentScreen('Summary');
+          setIsLoggedIn(true);
+          setCurrentScreen('PlanSaved');
         }}
         onForgotPassword={() => {
           console.log('Forgot Password clicked');
@@ -55,6 +87,7 @@ export default function App() {
   if (currentScreen === 'Summary') {
     return (
       <PlanMyDaySummaryScreen
+        isLoggedIn={isLoggedIn}
         navigation={{
           goBack: () => setCurrentScreen('Travellers'),
           navigate: (screenName) => setCurrentScreen(screenName || 'Home'),
@@ -64,6 +97,8 @@ export default function App() {
         onRegenerate={() => setCurrentScreen('Form')}
         onLogin={() => setCurrentScreen('Login')}
         onCreateAccount={() => setCurrentScreen('CreateAccount')}
+        onSavePlanDirect={() => setCurrentScreen('PlanSaved')}
+        onViewSavedPlansDirect={() => setCurrentScreen('SavedPlans')}
       />
     );
   }
