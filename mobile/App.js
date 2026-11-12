@@ -7,9 +7,28 @@ import PlanMyDayTravelScreen from './screens/PlanMyDayTravelScreen';
 import PlanMyDayTravellersScreen from './screens/PlanMyDayTravellersScreen';
 import PlanMyDaySummaryScreen from './screens/PlanMyDaySummaryScreen';
 import LoginScreen from './screens/LoginScreen';
+import CreateAccountScreen from './screens/CreateAccountScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+
+  // Create Account Screen
+  if (currentScreen === 'CreateAccount') {
+    return (
+      <CreateAccountScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Summary'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
+        }}
+        onBack={() => setCurrentScreen('Summary')}
+        onSignUp={(userData) => {
+          console.log('Account created:', userData);
+          setCurrentScreen('Summary');
+        }}
+        onSignInLink={() => setCurrentScreen('Login')}
+      />
+    );
+  }
 
   // Login Screen
   if (currentScreen === 'Login') {
@@ -27,9 +46,7 @@ export default function App() {
         onForgotPassword={() => {
           console.log('Forgot Password clicked');
         }}
-        onCreateAccount={() => {
-          console.log('Create Account clicked');
-        }}
+        onCreateAccount={() => setCurrentScreen('CreateAccount')}
       />
     );
   }
@@ -46,9 +63,7 @@ export default function App() {
         onEdit={() => setCurrentScreen('Form')}
         onRegenerate={() => setCurrentScreen('Form')}
         onLogin={() => setCurrentScreen('Login')}
-        onCreateAccount={() => {
-          console.log('Redirecting to Create Account Screen');
-        }}
+        onCreateAccount={() => setCurrentScreen('CreateAccount')}
       />
     );
   }
