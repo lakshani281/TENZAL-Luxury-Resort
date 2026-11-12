@@ -15,11 +15,14 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function PlanMyDaySummaryScreen({ 
   navigation, 
+  isLoggedIn = false,
   onBack, 
   onEdit, 
   onRegenerate, 
   onLogin, 
-  onCreateAccount 
+  onCreateAccount,
+  onSavePlanDirect,
+  onViewSavedPlansDirect,
 }) {
   const [isLoginModalVisible, setIsLoginModalVisible] = useState(false);
 
@@ -31,8 +34,20 @@ export default function PlanMyDaySummaryScreen({
     }
   };
 
-  const handleOpenLoginModal = () => {
-    setIsLoginModalVisible(true);
+  const handleSavePlanPress = () => {
+    if (isLoggedIn && onSavePlanDirect) {
+      onSavePlanDirect();
+    } else {
+      setIsLoginModalVisible(true);
+    }
+  };
+
+  const handleViewSavedPlansPress = () => {
+    if (isLoggedIn && onViewSavedPlansDirect) {
+      onViewSavedPlansDirect();
+    } else {
+      setIsLoginModalVisible(true);
+    }
   };
 
   const handleCloseLoginModal = () => {
@@ -174,7 +189,7 @@ export default function PlanMyDaySummaryScreen({
           <TouchableOpacity 
             style={styles.primaryButton} 
             activeOpacity={0.85}
-            onPress={handleOpenLoginModal}
+            onPress={handleSavePlanPress}
           >
             <Text style={styles.primaryButtonText}>Save Plan</Text>
           </TouchableOpacity>
@@ -182,7 +197,7 @@ export default function PlanMyDaySummaryScreen({
           <TouchableOpacity 
             style={styles.textLinkButton} 
             activeOpacity={0.7}
-            onPress={handleOpenLoginModal}
+            onPress={handleViewSavedPlansPress}
           >
             <Text style={styles.textLinkText}>View Saved Plans</Text>
           </TouchableOpacity>
