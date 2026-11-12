@@ -8,8 +8,7 @@ const destinations = [
     distance: '16.7 km',
     description:
       'A breathtaking viewpoint surrounded by beautiful tea plantations and misty mountain landscapes.',
-    image:
-      'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=900',
+    image: require('../assets/images/destinations/liptons-seat.jpg'),
     latitude: 6.8067,
     longitude: 81.0155,
   },
@@ -21,8 +20,7 @@ const destinations = [
     distance: '10.9 km',
     description:
       'Discover the traditional tea-making process and the heritage of Sri Lankan tea.',
-    image:
-      'https://images.unsplash.com/photo-1563911892437-1feda0179e1b?w=900',
+    image: require('../assets/images/destinations/dambatenne-tea-factory.jpg'),
     latitude: 6.802,
     longitude: 81.012,
   },
@@ -34,8 +32,7 @@ const destinations = [
     distance: '2.4 km',
     description:
       'Explore a historic English-style country house surrounded by peaceful gardens.',
-    image:
-      'https://images.unsplash.com/photo-1511818966892-d7d671e672a2?w=900',
+    image: require('../assets/images/destinations/adisham-bungalow.jpg'),
     latitude: 6.768,
     longitude: 80.958,
   },
@@ -47,8 +44,7 @@ const destinations = [
     distance: '2.0 km',
     description:
       'Experience scenic railway journeys through the beautiful central highlands.',
-    image:
-      'https://images.unsplash.com/photo-1474487548417-781cb71495f3?w=900',
+    image: require('../assets/images/destinations/haputale-railway.jpg'),
     latitude: 6.765,
     longitude: 80.953,
   },
@@ -60,8 +56,7 @@ const destinations = [
     distance: '30.5 km',
     description:
       'Visit one of Sri Lanka’s spectacular waterfalls with stunning natural surroundings.',
-    image:
-      'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=900',
+    image: require('../assets/images/destinations/diyaluma-falls.jpg'),
     latitude: 6.802,
     longitude: 81.031,
   },
@@ -73,8 +68,7 @@ const destinations = [
     distance: '24.1 km',
     description:
       'Discover Sri Lanka’s tallest waterfall surrounded by lush mountain scenery.',
-    image:
-      'https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=900',
+    image: require('../assets/images/destinations/bambarakanda-falls.jpg'),
     latitude: 6.773,
     longitude: 80.83,
   },

@@ -16,9 +16,10 @@ export default function DestinationCard({ destination, onPress }) {
       onPress={onPress}
     >
       <ImageBackground
-        source={{ uri: destination.image }}
+        source={destination.image}
         style={styles.image}
         imageStyle={styles.imageRadius}
+        resizeMode="cover"
       >
         <View style={styles.overlay} />
 

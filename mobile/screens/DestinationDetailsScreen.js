@@ -38,12 +38,15 @@ export default function DestinationDetailsScreen({
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Cover Image */}
         <ImageBackground
-          source={{ uri: destination.image }}
+          source={destination.image}
           style={styles.coverImage}
+          imageStyle={styles.coverImageRadius}
+          resizeMode="cover"
         >
           <TouchableOpacity
             style={styles.backButton}
             onPress={onBack}
+            activeOpacity={0.8}
           >
             <Text style={styles.backText}>‹</Text>
           </TouchableOpacity>
@@ -61,7 +64,7 @@ export default function DestinationDetailsScreen({
           </View>
         </ImageBackground>
 
-        {/* Details */}
+        {/* Destination Details */}
         <View style={styles.content}>
           <Text style={styles.sectionTitle}>
             About this place
@@ -71,11 +74,16 @@ export default function DestinationDetailsScreen({
             {destination.description}
           </Text>
 
+          {/* Information Card */}
           <View style={styles.infoCard}>
             <View style={styles.infoItem}>
               <Text style={styles.infoIcon}>📍</Text>
+
               <View>
-                <Text style={styles.infoLabel}>Location</Text>
+                <Text style={styles.infoLabel}>
+                  Location
+                </Text>
+
                 <Text style={styles.infoValue}>
                   {destination.location}
                 </Text>
@@ -86,8 +94,12 @@ export default function DestinationDetailsScreen({
 
             <View style={styles.infoItem}>
               <Text style={styles.infoIcon}>🚗</Text>
+
               <View>
-                <Text style={styles.infoLabel}>Distance from TENZAL</Text>
+                <Text style={styles.infoLabel}>
+                  Distance from TENZAL
+                </Text>
+
                 <Text style={styles.infoValue}>
                   {destination.distance}
                 </Text>
@@ -95,25 +107,29 @@ export default function DestinationDetailsScreen({
             </View>
           </View>
 
-          {/* Map Preview Placeholder */}
+          {/* Location Section */}
           <Text style={styles.sectionTitle}>
             Location
           </Text>
 
           <View style={styles.mapPlaceholder}>
             <Text style={styles.mapIcon}>📍</Text>
+
             <Text style={styles.mapText}>
               {destination.name}
             </Text>
+
             <Text style={styles.mapSubtext}>
               {destination.latitude}, {destination.longitude}
             </Text>
           </View>
 
+          {/* Travel Notice */}
           <View style={styles.notice}>
             <Text style={styles.noticeTitle}>
               Plan before you go
             </Text>
+
             <Text style={styles.noticeText}>
               Check weather conditions and travel arrangements
               before visiting this destination.
@@ -127,9 +143,10 @@ export default function DestinationDetailsScreen({
         <TouchableOpacity
           style={styles.directionsButton}
           onPress={openDirections}
+          activeOpacity={0.85}
         >
           <Text style={styles.directionsText}>
-            Get Directions  →
+            Get Directions →
           </Text>
         </TouchableOpacity>
       </View>
@@ -142,15 +159,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAF9F4',
   },
+
   coverImage: {
     height: 340,
     justifyContent: 'flex-end',
     backgroundColor: '#D9DED9',
   },
+
+  coverImageRadius: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+
   imageOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.30)',
   },
+
   backButton: {
     position: 'absolute',
     top: 55,
@@ -163,15 +188,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
+
   backText: {
     fontSize: 30,
     color: '#263B39',
     marginTop: -4,
   },
+
   coverContent: {
     padding: 23,
     zIndex: 1,
   },
+
   category: {
     color: '#FFFFFF',
     fontSize: 12,
@@ -180,16 +208,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
+
   title: {
     color: '#FFFFFF',
     fontSize: 29,
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
+
   content: {
     padding: 21,
     paddingBottom: 30,
   },
+
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -198,11 +229,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 12,
   },
+
   description: {
     color: '#77766F',
     fontSize: 14,
     lineHeight: 23,
   },
+
   infoCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 15,
@@ -211,30 +244,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ECEAE3',
   },
+
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 7,
   },
+
   infoIcon: {
     fontSize: 23,
     marginRight: 14,
   },
+
   infoLabel: {
     color: '#99958E',
     fontSize: 11,
     marginBottom: 4,
   },
+
   infoValue: {
     color: '#263B39',
     fontSize: 14,
     fontWeight: '600',
   },
+
   divider: {
     height: 1,
     backgroundColor: '#ECEAE3',
     marginVertical: 8,
   },
+
   mapPlaceholder: {
     height: 140,
     backgroundColor: '#E8EDE7',
@@ -242,36 +281,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   mapIcon: {
     fontSize: 28,
   },
+
   mapText: {
     color: '#263B39',
     fontWeight: 'bold',
     marginTop: 5,
   },
+
   mapSubtext: {
     color: '#77766F',
     fontSize: 10,
     marginTop: 4,
   },
+
   notice: {
     backgroundColor: '#EDF2ED',
     borderRadius: 13,
     padding: 16,
     marginTop: 20,
   },
+
   noticeTitle: {
     color: '#347F8C',
     fontWeight: 'bold',
     fontSize: 14,
     marginBottom: 7,
   },
+
   noticeText: {
     color: '#68736D',
     fontSize: 12,
     lineHeight: 19,
   },
+
   bottomContainer: {
     paddingHorizontal: 20,
     paddingVertical: 13,
@@ -279,12 +325,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#EAE8E0',
   },
+
   directionsButton: {
     backgroundColor: '#347F8C',
     borderRadius: 13,
     paddingVertical: 16,
     alignItems: 'center',
   },
+
   directionsText: {
     color: '#FFFFFF',
     fontSize: 15,
