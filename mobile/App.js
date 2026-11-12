@@ -6,9 +6,33 @@ import PlanMyDayInterestsScreen from './screens/PlanMyDayInterestsScreen';
 import PlanMyDayTravelScreen from './screens/PlanMyDayTravelScreen';
 import PlanMyDayTravellersScreen from './screens/PlanMyDayTravellersScreen';
 import PlanMyDaySummaryScreen from './screens/PlanMyDaySummaryScreen';
+import LoginScreen from './screens/LoginScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+
+  // Login Screen
+  if (currentScreen === 'Login') {
+    return (
+      <LoginScreen
+        navigation={{
+          goBack: () => setCurrentScreen('Summary'),
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
+        }}
+        onBack={() => setCurrentScreen('Summary')}
+        onSignIn={(credentials) => {
+          console.log('Signed in:', credentials);
+          setCurrentScreen('Summary');
+        }}
+        onForgotPassword={() => {
+          console.log('Forgot Password clicked');
+        }}
+        onCreateAccount={() => {
+          console.log('Create Account clicked');
+        }}
+      />
+    );
+  }
 
   // Screen 7: Summary Screen (Generated Itinerary & Login Modal Prompt)
   if (currentScreen === 'Summary') {
@@ -16,17 +40,13 @@ export default function App() {
       <PlanMyDaySummaryScreen
         navigation={{
           goBack: () => setCurrentScreen('Travellers'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Home')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Home'),
         }}
         onBack={() => setCurrentScreen('Travellers')}
         onEdit={() => setCurrentScreen('Form')}
         onRegenerate={() => setCurrentScreen('Form')}
-        onLogin={() => {
-          // Login screen එක හදපු ගමන් මෙතැනට redirect කරන්න පුළුවන්
-          console.log('Redirecting to Login Screen');
-        }}
+        onLogin={() => setCurrentScreen('Login')}
         onCreateAccount={() => {
-          // Register / Create Account screen එක හදපු ගමන් මෙතැනට redirect කරන්න පුළුවන්
           console.log('Redirecting to Create Account Screen');
         }}
       />
@@ -39,7 +59,7 @@ export default function App() {
       <PlanMyDayTravellersScreen
         navigation={{
           goBack: () => setCurrentScreen('Travel'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
         }}
         onBack={() => setCurrentScreen('Travel')}
         onNext={() => setCurrentScreen('Summary')}
@@ -53,7 +73,7 @@ export default function App() {
       <PlanMyDayTravelScreen
         navigation={{
           goBack: () => setCurrentScreen('Interests'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Travellers')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Travellers'),
         }}
         onBack={() => setCurrentScreen('Interests')}
         onNext={() => setCurrentScreen('Travellers')}
@@ -67,7 +87,7 @@ export default function App() {
       <PlanMyDayInterestsScreen
         navigation={{
           goBack: () => setCurrentScreen('Budget'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Travel')
+          navigate: (screenName) => setCurrentScreen(screenName || 'Travel'),
         }}
         onBack={() => setCurrentScreen('Budget')}
         onNext={() => setCurrentScreen('Travel')}
@@ -78,11 +98,11 @@ export default function App() {
   // Screen 3: Budget Screen (Step 2 of 5)
   if (currentScreen === 'Budget') {
     return (
-      <PlanMyDayBudgetScreen 
-        navigation={{ 
+      <PlanMyDayBudgetScreen
+        navigation={{
           goBack: () => setCurrentScreen('Form'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Interests')
-        }} 
+          navigate: (screenName) => setCurrentScreen(screenName || 'Interests'),
+        }}
         onBack={() => setCurrentScreen('Form')}
         onNext={() => setCurrentScreen('Interests')}
       />
@@ -92,11 +112,11 @@ export default function App() {
   // Screen 2: Form Screen (Step 1 of 5)
   if (currentScreen === 'Form') {
     return (
-      <PlanMyDayFormScreen 
-        navigation={{ 
+      <PlanMyDayFormScreen
+        navigation={{
           goBack: () => setCurrentScreen('Home'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Budget')
-        }} 
+          navigate: (screenName) => setCurrentScreen(screenName || 'Budget'),
+        }}
         onNext={() => setCurrentScreen('Budget')}
         onBack={() => setCurrentScreen('Home')}
       />
@@ -105,8 +125,8 @@ export default function App() {
 
   // Screen 1: Home Screen (Default)
   return (
-    <PlanMyDayHomeScreen 
-      onNavigateToForm={() => setCurrentScreen('Form')} 
+    <PlanMyDayHomeScreen
+      onNavigateToForm={() => setCurrentScreen('Form')}
     />
   );
 }
