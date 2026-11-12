@@ -23,10 +23,36 @@ export default function LoginScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSignInPress = () => {
+    setErrorMessage('');
+
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMessage('Password must be at least 8 characters.');
+      return;
+    }
+
     if (onSignIn) {
-      onSignIn({ email, password });
+      onSignIn({ email: trimmedEmail, password });
     } else if (navigation && navigation.navigate) {
       navigation.navigate('Summary');
     }
@@ -58,6 +84,14 @@ export default function LoginScreen({
 
           {/* Form Inputs */}
           <View style={styles.formContainer}>
+            {/* Error Banner */}
+            {errorMessage ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={16} color="#C53030" />
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
             {/* Email Input Box */}
             <View style={styles.inputBox}>
               <Text style={styles.inputLabel}>Email</Text>
@@ -66,7 +100,10 @@ export default function LoginScreen({
                 placeholder="you@example.com"
                 placeholderTextColor="#8C96A4"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  if (errorMessage) setErrorMessage('');
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -83,7 +120,10 @@ export default function LoginScreen({
                     placeholder="At least 8 characters"
                     placeholderTextColor="#8C96A4"
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (errorMessage) setErrorMessage('');
+                    }}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                   />
@@ -178,6 +218,23 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     width: '100%',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FEB2B2',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  errorText: {
+    color: '#C53030',
+    fontSize: 13,
+    marginLeft: 8,
+    flex: 1,
   },
   inputBox: {
     backgroundColor: '#FFFFFF',
