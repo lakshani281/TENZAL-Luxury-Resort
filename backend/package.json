@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "name": "tenzal-luxury-resort-backend",
   "version": "1.0.0",
   "description": "Backend API for TENZAL Luxury Resort Room Booking System",
@@ -25,5 +26,30 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
+=======
+  "name": "tenzal-backend",
+  "version": "1.0.0",
+  "description": "TENZAL Luxury Resort - Food Ordering Backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "keywords": [
+    "tenzal",
+    "luxury-resort",
+    "food-ordering",
+    "express",
+    "api"
+  ],
+  "author": "Student ID: 22CIS0328",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "pg": "^8.23.1"
+>>>>>>> origin/main
   }
 }
