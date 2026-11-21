@@ -191,7 +191,11 @@ class OrderModel {
 
         return formatOrder(createdOrder, insertedDetails, historyRows);
       } catch (error) {
-        await client.query('ROLLBACK');
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          // Safe handling: ignore rollback error if connection was dropped
+        }
 
         // Detect PostgreSQL unique constraint violation on order_code (error code '23505')
         const isOrderCodeCollision =
@@ -251,6 +255,44 @@ class OrderModel {
     const { rows: historyRows } = await db.query(historySql, [orderId]);
 
     return formatOrder(orderRows[0], detailRows, historyRows);
+  }
+
+  /**
+   * Find safe, minimal order tracking projection by unique order code.
+   * Returns ONLY public progress fields (order_code, status, estimated_delivery_minutes,
+   * created_at, and item_count).
+   *
+   * STRICT PRIVACY GUARANTEE:
+   * Does NOT select or expose room numbers, room names, guest customer IDs,
+   * special delivery notes, pricing totals, item names, dish prices, or internal audit logs.
+   *
+   * @param {string} orderCode - Validated order code (e.g. 'ORD-20261121-7F3A2B')
+   * @returns {Promise<Object|null>}
+   */
+  static async findTrackingByCode(orderCode) {
+    const queryText = `
+      SELECT 
+        o.order_code,
+        o.status,
+        o.estimated_delivery_minutes,
+        o.created_at,
+        COALESCE(COUNT(d.order_detail_id), 0)::int AS item_count
+      FROM orders o
+      LEFT JOIN order_details d ON o.order_id = d.order_id
+      WHERE o.order_code = $1
+      GROUP BY o.order_id, o.order_code, o.status, o.estimated_delivery_minutes, o.created_at;
+    `;
+    const { rows } = await db.query(queryText, [orderCode]);
+    if (rows.length === 0) return null;
+
+    const row = rows[0];
+    return {
+      order_code: row.order_code,
+      status: row.status,
+      estimated_delivery_minutes: row.estimated_delivery_minutes,
+      created_at: row.created_at,
+      item_count: typeof row.item_count === 'number' ? row.item_count : parseInt(row.item_count, 10) || 0,
+    };
   }
 }
 
