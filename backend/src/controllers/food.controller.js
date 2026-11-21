@@ -596,6 +596,252 @@ async function getOrderTrackingByCode(req, res) {
   }
 }
 
+/**
+ * Controller: Get Batch Public Order Progress Tracking
+ * POST /api/food/orders/tracking/batch
+ *
+ * Request Body:
+ * - order_codes: Array of 1 to 10 order codes (e.g. ['ORD-20261121-7F3A2B', ...])
+ *
+ * Strict Privacy & Security Specification:
+ * - Rate limited by orderTrackingRateLimiter (shared 30 req/min per IP)
+ * - Requires an array between 1 and 10 codes
+ * - Normalizes codes to uppercase and validates format against /^ORD-\d{8}-[A-F0-9]{6}$/
+ * - Exposes ONLY public progress indicators (order_code, status, estimated_delivery_minutes, created_at, item_count)
+ * - NEVER leaks room details, customer_id, special_note, financial totals, dish names, or internal staff history
+ * - Avoids exposing guest identities or ownership
+ */
+async function getBatchOrderTracking(req, res) {
+  try {
+    const { order_codes } = req.body || {};
+
+    if (!order_codes || !Array.isArray(order_codes)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'order_codes is required and must be an array of order codes.',
+      });
+    }
+
+    if (order_codes.length === 0 || order_codes.length > 10) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'order_codes array must contain between 1 and 10 order codes.',
+      });
+    }
+
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+    const normalizedCodes = [];
+
+    for (let i = 0; i < order_codes.length; i++) {
+      const code = order_codes[i];
+      if (typeof code !== 'string') {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: `Invalid order code at index ${i}. Each order code must be a string.`,
+        });
+      }
+
+      const trimmedCode = code.trim().toUpperCase();
+      if (!ORDER_CODE_REGEX.test(trimmedCode)) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: `Invalid order code format at index ${i}: "${code}". Expected format: ORD-YYYYMMDD-XXXXXX.`,
+        });
+      }
+
+      normalizedCodes.push(trimmedCode);
+    }
+
+    // Deduplicate codes while preserving order
+    const uniqueCodes = Array.from(new Set(normalizedCodes));
+
+    const trackingList = await Order.findBatchTrackingByCodes(uniqueCodes);
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: trackingList.length,
+      data: trackingList,
+    });
+  } catch (error) {
+    console.error('Error in getBatchOrderTracking:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve batch order tracking information. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Allowed target statuses for transition via staff update endpoint.
+ * 'Pending' is the initial placement state and cannot be transitioned into.
+ */
+const ALLOWED_STAFF_TARGET_STATUSES = Object.freeze([
+  'In Kitchen',
+  'Out for Delivery',
+  'Delivered',
+  'Cancelled',
+]);
+
+/**
+ * Controller: Update Order Status (Staff Only)
+ * PATCH /api/food/orders/code/:order_code/status
+ *
+ * SECURITY & AUTHENTICATION SPECIFICATION:
+ * - Requires verified staff authentication from User Management (Student ID: 22CIS0274) JWT middleware.
+ * - Strictly rejects unauthenticated requests (missing req.user or req.user.user_id) with HTTP 401.
+ * - Strictly rejects non-staff roles (e.g. Guests) with HTTP 403.
+ * - Strictly obtains changedByUserId from verified req.user.user_id.
+ *   NEVER trusts req.body, req.query, req.params, or arbitrary headers (e.g. x-user-id).
+ * - Enforces order code format /^ORD-\d{8}-[A-F0-9]{6}$/i.
+ * - Atomically executes state transition and inserts order_status_history via Order.transitionStatus.
+ *
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+async function updateOrderStatus(req, res) {
+  try {
+    // 1. Staff Authentication & Role Authorization Guard
+    if (!req.user || !req.user.user_id) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Verified staff credentials must be provided via authentication middleware.',
+      });
+    }
+
+    if (req.user.role && !['Staff', 'Admin', 'KitchenStaff', 'DeliveryStaff'].includes(req.user.role)) {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        message: 'Access denied. Staff privileges are required to update order status.',
+      });
+    }
+
+    // 2. Validate order_code URL parameter
+    const rawCode = req.params?.order_code;
+    const normalizedCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/i;
+
+    if (!normalizedCode || !ORDER_CODE_REGEX.test(normalizedCode)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX (e.g. ORD-20261121-7F3A2B).',
+      });
+    }
+
+    // 3. Validate body parameters
+    const { status, change_reason, changeReason } = req.body || {};
+
+    if (!status || typeof status !== 'string' || !ALLOWED_STAFF_TARGET_STATUSES.includes(status.trim())) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: `Invalid or missing status. Allowed target statuses: ${ALLOWED_STAFF_TARGET_STATUSES.join(', ')}.`,
+      });
+    }
+
+    const targetStatus = status.trim();
+
+    // 4. Validate change_reason (optional for progression, max 255 chars)
+    const rawReason = change_reason !== undefined ? change_reason : changeReason;
+    let validatedReason = null;
+
+    if (rawReason !== undefined && rawReason !== null) {
+      if (typeof rawReason !== 'string') {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'change_reason must be a string.',
+        });
+      }
+      const trimmedReason = rawReason.trim();
+      if (trimmedReason.length > 255) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'change_reason exceeds maximum allowed length of 255 characters.',
+        });
+      }
+      validatedReason = trimmedReason.length > 0 ? trimmedReason : null;
+    }
+
+    // 5. Secure identity extraction: strictly req.user.user_id
+    const changedByUserId = req.user.user_id;
+
+    // 6. Execute atomic state machine transition
+    const transitionResult = await Order.transitionStatus({
+      orderCode: normalizedCode,
+      nextStatus: targetStatus,
+      changeReason: validatedReason,
+      changedByUserId,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      message: `Order ${normalizedCode} status successfully updated to "${transitionResult.status}".`,
+      data: transitionResult,
+    });
+  } catch (error) {
+    if (error.code === 'ORDER_NOT_FOUND') {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        message: error.message || `Order with code not found.`,
+      });
+    }
+
+    if (error.code === 'TERMINAL_STATE') {
+      return res.status(409).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+        current_status: error.currentStatus,
+      });
+    }
+
+    if (error.code === 'INVALID_TRANSITION') {
+      return res.status(422).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+        current_status: error.currentStatus,
+        target_status: error.nextStatus,
+      });
+    }
+
+    if (error.code === 'REASON_REQUIRED') {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (error.code === 'INVALID_STATUS' || error.code === 'INVALID_ARGUMENT') {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error('Error in updateOrderStatus:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to update order status. Please try again later.',
+    });
+  }
+}
+
 module.exports = {
   getCategories,
   getFoodItems,
@@ -604,4 +850,6 @@ module.exports = {
   createOrder,
   getOrderById,
   getOrderTrackingByCode,
+  getBatchOrderTracking,
+  updateOrderStatus,
 };

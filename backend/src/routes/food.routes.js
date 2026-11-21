@@ -23,7 +23,10 @@ router.get('/items/:id', foodController.getFoodItemById);
 // 5. POST /api/food/orders - Create in-room dining order (rate limited: 10 req/min per IP)
 router.post('/orders', orderCreationRateLimiter, foodController.createOrder);
 
-// 5.1 GET /api/food/orders/code/:order_code - Safe public order progress tracking (rate limited: 30 req/min per IP)
+// 5.1 POST /api/food/orders/tracking/batch - Batch public order progress tracking (rate limited: 30 req/min per IP)
+router.post('/orders/tracking/batch', orderTrackingRateLimiter, foodController.getBatchOrderTracking);
+
+// 5.2 GET /api/food/orders/code/:order_code - Safe public order progress tracking (rate limited: 30 req/min per IP)
 // Registered BEFORE /orders/:id to prevent route shadowing/collision
 router.get('/orders/code/:order_code', orderTrackingRateLimiter, foodController.getOrderTrackingByCode);
 
