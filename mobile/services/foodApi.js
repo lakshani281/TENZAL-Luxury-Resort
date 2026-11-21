@@ -432,6 +432,77 @@ export async function createOrder(orderData) {
 }
 
 /**
+ * Retrieves safe public order progress tracking by unique order code.
+ * Endpoint: GET /api/food/orders/code/:order_code
+ *
+ * Strict Privacy & Security Specification:
+ * - Returns ONLY public tracking fields: order_code, status, estimated_delivery_minutes, created_at, item_count.
+ * - Never returns or requests private guest data (room, notes, prices, items).
+ * - Protected by server-side in-memory IP rate limiter (30 req/min).
+ *
+ * @param {string} orderCode - Human-friendly order code (e.g. 'ORD-20261121-7F3A2B')
+ * @returns {Promise<{ order_code: string, status: string, estimated_delivery_minutes: number, created_at: string, item_count: number }>}
+ */
+export async function getOrderTrackingByCode(orderCode) {
+  if (!orderCode || typeof orderCode !== 'string') {
+    throw new Error('Order code is required.');
+  }
+
+  const cleanCode = orderCode.trim().toUpperCase();
+  const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+  if (!ORDER_CODE_REGEX.test(cleanCode)) {
+    throw new Error('Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX');
+  }
+
+  const url = buildUrl(`/orders/code/${encodeURIComponent(cleanCode)}`);
+  const json = await request(url, { method: 'GET' });
+
+  if (!json?.data) {
+    throw new Error('Invalid server response: Tracking information was not returned.');
+  }
+
+  return json.data;
+}
+
+/**
+ * Retrieves safe public order progress tracking for multiple order codes in a single request.
+ * Endpoint: POST /api/food/orders/tracking/batch
+ *
+ * Strict Specification:
+ * - Slices array to maximum 10 order codes
+ * - Validates and normalizes codes to uppercase
+ * - Returns array of 5 public tracking fields: order_code, status, estimated_delivery_minutes, created_at, item_count
+ * - Protected by server-side rate limiter (30 req/min)
+ *
+ * @param {Array<string>} orderCodes - Array of order codes (1 to 10 codes)
+ * @returns {Promise<Array<{ order_code: string, status: string, estimated_delivery_minutes: number, created_at: string, item_count: number }>>}
+ */
+export async function getBatchOrderTracking(orderCodes) {
+  if (!Array.isArray(orderCodes) || orderCodes.length === 0) {
+    return [];
+  }
+
+  const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+  const validCodes = orderCodes
+    .filter((c) => typeof c === 'string' && c.trim().length > 0)
+    .map((c) => c.trim().toUpperCase())
+    .filter((c) => ORDER_CODE_REGEX.test(c))
+    .slice(0, 10);
+
+  if (validCodes.length === 0) {
+    return [];
+  }
+
+  const url = buildUrl('/orders/tracking/batch');
+  const json = await request(url, {
+    method: 'POST',
+    body: JSON.stringify({ order_codes: validCodes }),
+  });
+
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+/**
  * Default export consolidating all Food Ordering API client functions
  */
 export default {
@@ -448,4 +519,6 @@ export default {
   getFoodItems,
   getFoodItemById,
   createOrder,
+  getOrderTrackingByCode,
+  getBatchOrderTracking,
 };
