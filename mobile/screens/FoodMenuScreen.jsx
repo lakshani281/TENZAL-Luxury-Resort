@@ -20,7 +20,15 @@ import {
   getDailySpecials,
   getFoodItems,
   createOrder,
+  getOrderTrackingByCode,
+  getBatchOrderTracking,
 } from '../services/foodApi';
+import {
+  loadRecentOrders,
+  saveOrderReceipt,
+  updateOrderStatusInStorage,
+  updateBatchOrderStatuses,
+} from '../services/orderStorage';
 
 // Soft Coastal Luxury Theme
 const THEME = {
@@ -32,6 +40,45 @@ const THEME = {
   darkSlate: '#263B46',
   mutedSlate: '#5E7480',
   white: '#FFFFFF',
+};
+
+// Thematic Order Status Visual Configuration
+const STATUS_CONFIG = {
+  'Pending': {
+    label: 'Pending',
+    icon: 'time-outline',
+    textColor: '#B45309',
+    bgColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  'In Kitchen': {
+    label: 'In Kitchen',
+    icon: 'flame-outline',
+    textColor: '#1D6377',
+    bgColor: '#DCEEF4',
+    borderColor: '#B6DDE9',
+  },
+  'Out for Delivery': {
+    label: 'Out for Delivery',
+    icon: 'bicycle-outline',
+    textColor: '#0F766E',
+    bgColor: '#CCFBF1',
+    borderColor: '#99F6E4',
+  },
+  'Delivered': {
+    label: 'Delivered',
+    icon: 'checkmark-done-circle',
+    textColor: '#15803D',
+    bgColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  'Cancelled': {
+    label: 'Cancelled',
+    icon: 'close-circle',
+    textColor: '#991B1B',
+    bgColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
 };
 
 // Approved Delivery Rooms (Strictly verified 3 rooms)
@@ -80,6 +127,107 @@ export default function FoodMenuScreen({ navigation, onBack }) {
   // Order Placement submission states
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+
+  // Safe Public Order Tracking refresh states
+  const [isRefreshingTracking, setIsRefreshingTracking] = useState(false);
+  const [trackingNotice, setTrackingNotice] = useState(null);
+
+  // Multi-Order History & Batch Tracking states (Student ID: 22CIS0328 - Phase 3)
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
+  const [ordersNotice, setOrdersNotice] = useState(null);
+
+  // Load stored orders on initial component mount
+  useEffect(() => {
+    let isMounted = true;
+    async function initRecentOrders() {
+      try {
+        const stored = await loadRecentOrders();
+        if (isMounted && Array.isArray(stored)) {
+          setRecentOrders(stored);
+        }
+      } catch (err) {
+        console.warn('[FoodMenuScreen] Failed to load recent orders on mount:', err);
+      }
+    }
+    initRecentOrders();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Refresh multiple orders via safe public batch tracking endpoint (max 10 codes)
+  const handleRefreshBatchTracking = async () => {
+    if (isRefreshingOrders || !recentOrders || recentOrders.length === 0) return;
+
+    const codes = recentOrders
+      .map((o) => o.orderCode)
+      .filter((c) => typeof c === 'string' && c.trim().length > 0)
+      .slice(0, 10);
+
+    if (codes.length === 0) return;
+
+    setIsRefreshingOrders(true);
+    setOrdersNotice(null);
+
+    try {
+      const trackingList = await getBatchOrderTracking(codes);
+
+      if (Array.isArray(trackingList) && trackingList.length > 0) {
+        // Atomically validate and persist status updates to local storage
+        const updatedOrders = await updateBatchOrderStatuses(trackingList);
+        setRecentOrders(updatedOrders);
+        setOrdersNotice('Kitchen status refreshed.');
+      } else {
+        setOrdersNotice('All orders are up to date.');
+      }
+    } catch (err) {
+      if (err.status === 429) {
+        setOrdersNotice('Rate limit reached (max 30/min). Displaying latest known status.');
+      } else {
+        setOrdersNotice('Unable to reach kitchen tracking. Displaying latest known status.');
+      }
+    } finally {
+      setIsRefreshingOrders(false);
+    }
+  };
+
+  // Refresh active order progress via safe public tracking endpoint
+  const handleRefreshTracking = async () => {
+    const code = activeOrder?.orderCode || (activeOrder?.orderId && String(activeOrder.orderId).startsWith('ORD-') ? activeOrder.orderId : null);
+    if (!code || isRefreshingTracking) return;
+
+    setIsRefreshingTracking(true);
+    setTrackingNotice(null);
+
+    try {
+      const tracking = await getOrderTrackingByCode(code);
+      if (tracking) {
+        setActiveOrder((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            status: tracking.status || prev.status,
+            estimatedDelivery: tracking.estimated_delivery_minutes
+              ? `~${tracking.estimated_delivery_minutes} minutes`
+              : prev.estimatedDelivery,
+            estimatedDeliveryMinutes: tracking.estimated_delivery_minutes || prev.estimatedDeliveryMinutes,
+          };
+        });
+        setTrackingNotice('Kitchen status refreshed.');
+      }
+    } catch (err) {
+      if (err.status === 429) {
+        setTrackingNotice('Rate limit reached (max 30/min). Please wait a moment.');
+      } else if (err.status === 404) {
+        setTrackingNotice('Order record not found in active kitchen system.');
+      } else {
+        setTrackingNotice('Unable to reach kitchen tracking. Check connection.');
+      }
+    } finally {
+      setIsRefreshingTracking(false);
+    }
+  };
 
   // Load categories, specials, and menu items from backend with Promise.allSettled
   const loadMenuData = useCallback(async (isRefresh = false) => {
@@ -252,8 +400,8 @@ export default function FoodMenuScreen({ navigation, onBack }) {
 
       const backendOrder = await createOrder(orderPayload);
 
-      // Successfully placed real order in PostgreSQL
-      setActiveOrder({
+      // Active order for the current session (displayed in confirmation modal)
+      const placedActiveOrder = {
         orderId: backendOrder.order_code,
         orderCode: backendOrder.order_code,
         roomName: backendOrder.room_name,
@@ -275,7 +423,32 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         estimatedDeliveryMinutes: backendOrder.estimated_delivery_minutes || 30,
         createdAt: backendOrder.created_at,
         raw: backendOrder,
-      });
+      };
+
+      // Minimal receipt for privacy-preserving local storage and recent orders
+      const minimalReceipt = {
+        orderCode: backendOrder.order_code,
+        createdAt: backendOrder.created_at || new Date().toISOString(),
+        items: Array.isArray(backendOrder.items)
+          ? backendOrder.items.map((it) => ({
+              name: it.item_name,
+              quantity: it.quantity,
+              price: it.unit_price,
+            }))
+          : [],
+        subtotalLKR: backendOrder.subtotal,
+        serviceChargeLKR: backendOrder.service_charge,
+        totalLKR: backendOrder.total_amount,
+        status: backendOrder.status || 'Pending',
+        estimatedDeliveryMinutes: backendOrder.estimated_delivery_minutes || 30,
+      };
+
+      // 1. Immediately update UI state (Session Success)
+      setActiveOrder(placedActiveOrder);
+      setRecentOrders((prev) => [
+        minimalReceipt,
+        ...prev.filter((o) => o.orderCode !== minimalReceipt.orderCode),
+      ].slice(0, 10));
 
       // Clear cart and reset form only after confirmed success
       setCart([]);
@@ -287,6 +460,13 @@ export default function FoodMenuScreen({ navigation, onBack }) {
       // Close cart tray and open confirmation modal
       setCartVisible(false);
       setOrderConfirmedVisible(true);
+
+      // 2. Decoupled local persistence (isolated try-catch so storage errors NEVER fail the order)
+      try {
+        await saveOrderReceipt(minimalReceipt);
+      } catch (storageError) {
+        console.warn('[FoodMenuScreen] Notice: Failed to persist order receipt locally:', storageError.message || storageError);
+      }
     } catch (error) {
       console.error('[FoodMenuScreen] Order creation failed:', error);
       // Keep cart, room, and special instructions intact on failure
@@ -953,17 +1133,144 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                 <Ionicons name="close" size={20} color={THEME.darkSlate} />
               </TouchableOpacity>
               <Text style={styles.modalHeaderTitle}>My In-Room Orders</Text>
-              <View style={{ width: 36 }} />
+              <TouchableOpacity
+                style={[
+                  styles.modalRefreshButton,
+                  (isRefreshingOrders || isRefreshingTracking) && { opacity: 0.6 },
+                ]}
+                onPress={handleRefreshBatchTracking}
+                disabled={isRefreshingOrders || (!recentOrders.length && !activeOrder)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={isRefreshingOrders ? 'sync' : 'refresh'}
+                  size={16}
+                  color={THEME.oceanBlue}
+                />
+              </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 18 }}>
-              {activeOrder ? (
+            {ordersNotice ? (
+              <View style={styles.ordersNoticeBanner}>
+                <Ionicons name="information-circle-outline" size={13} color={THEME.oceanBlue} />
+                <Text style={styles.ordersNoticeText}>{ordersNotice}</Text>
+              </View>
+            ) : null}
+
+            <ScrollView
+              contentContainerStyle={{ padding: 18, paddingBottom: 40 }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefreshingOrders}
+                  onRefresh={handleRefreshBatchTracking}
+                  colors={[THEME.oceanBlue]}
+                  tintColor={THEME.oceanBlue}
+                />
+              }
+            >
+              {recentOrders && recentOrders.length > 0 ? (
+                recentOrders.map((order, idx) => {
+                  const statusCfg = STATUS_CONFIG[order.status] || STATUS_CONFIG['Pending'];
+                  const formattedDate = order.createdAt
+                    ? new Date(order.createdAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Recent Order';
+
+                  return (
+                    <View key={order.orderCode || idx} style={styles.orderHistoryCard}>
+                      {/* Card Header: Order Code & Status Badge */}
+                      <View style={styles.orderCardHeader}>
+                        <View style={styles.orderCodeBadge}>
+                          <Ionicons name="receipt-outline" size={13} color={THEME.darkSlate} />
+                          <Text style={styles.orderCodeText}>{order.orderCode}</Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.borderColor },
+                          ]}
+                        >
+                          <Ionicons name={statusCfg.icon} size={11} color={statusCfg.textColor} />
+                          <Text style={[styles.statusBadgeText, { color: statusCfg.textColor }]}>
+                            {statusCfg.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Date & Delivery Progress ETA */}
+                      <View style={styles.orderMetaRow}>
+                        <Text style={styles.orderMetaDate}>{formattedDate}</Text>
+                        {order.status !== 'Delivered' && order.status !== 'Cancelled' ? (
+                          <View style={styles.etaPill}>
+                            <Ionicons name="time-outline" size={10} color={THEME.oceanBlue} />
+                            <Text style={styles.etaPillText}>
+                              ETA: ~{order.estimatedDeliveryMinutes || 30} min
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {/* Dishes Itemized Summary */}
+                      <View style={styles.orderItemsBox}>
+                        {Array.isArray(order.items) && order.items.length > 0 ? (
+                          order.items.map((it, itemIdx) => (
+                            <View key={itemIdx} style={styles.orderItemLine}>
+                              <Text style={styles.orderItemName} numberOfLines={1}>
+                                {it.name}
+                              </Text>
+                              <Text style={styles.orderItemQtyPrice}>
+                                x{it.quantity} · LKR {(it.price * it.quantity).toLocaleString()}
+                              </Text>
+                            </View>
+                          ))
+                        ) : (
+                          <Text style={styles.orderItemEmpty}>In-room dining dish details recorded</Text>
+                        )}
+                      </View>
+
+                      {/* Financial Total */}
+                      <View style={styles.orderCardFooter}>
+                        <Text style={styles.orderTotalLabel}>Total Amount</Text>
+                        <Text style={styles.orderTotalValue}>
+                          LKR {order.totalLKR ? Number(order.totalLKR).toLocaleString() : '0'}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })
+              ) : activeOrder ? (
+                /* Fallback to single activeOrder if recentOrders not yet hydrated */
                 <View style={styles.activeOrderCard}>
                   <View style={styles.orderHeaderRow}>
                     <Text style={styles.orderCode}>{activeOrder.orderCode || activeOrder.orderId}</Text>
                     <View style={styles.statusPill}>
                       <Text style={styles.statusPillText}>{activeOrder.status || 'Pending'}</Text>
                     </View>
+                  </View>
+
+                  <View style={styles.trackingBarRow}>
+                    <TouchableOpacity
+                      style={[styles.trackingRefreshBtn, isRefreshingTracking && { opacity: 0.6 }]}
+                      onPress={handleRefreshTracking}
+                      disabled={isRefreshingTracking}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={isRefreshingTracking ? 'sync' : 'refresh'}
+                        size={12}
+                        color={THEME.oceanBlue}
+                      />
+                      <Text style={styles.trackingRefreshText}>
+                        {isRefreshingTracking ? 'Checking...' : 'Live Kitchen Status'}
+                      </Text>
+                    </TouchableOpacity>
+                    {trackingNotice ? (
+                      <Text style={styles.trackingNoticeText}>{trackingNotice}</Text>
+                    ) : null}
                   </View>
 
                   <Text style={styles.orderItemsPreview}>
@@ -979,50 +1286,21 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                       : '• No items in active order'}
                   </Text>
 
-                  {activeOrder.specialNote && activeOrder.specialNote.trim() ? (
-                    <Text style={styles.orderSpecialNote}>
-                      Note: {activeOrder.specialNote}
-                    </Text>
-                  ) : null}
-
                   <View style={styles.orderFinancialSummary}>
                     <View style={styles.orderFinanceRow}>
-                      <Text style={styles.orderFinanceLabel}>Subtotal</Text>
-                      <Text style={styles.orderFinanceVal}>
-                        LKR {activeOrder.subtotalLKR ? activeOrder.subtotalLKR.toLocaleString() : '0'}
-                      </Text>
-                    </View>
-                    <View style={styles.orderFinanceRow}>
-                      <Text style={styles.orderFinanceLabel}>Resort Service Charge (10%)</Text>
-                      <Text style={styles.orderFinanceVal}>
-                        LKR {activeOrder.serviceChargeLKR ? activeOrder.serviceChargeLKR.toLocaleString() : '0'}
-                      </Text>
-                    </View>
-                    <View style={[styles.orderFinanceRow, { marginTop: 4 }]}>
-                      <Text style={[styles.orderFinanceLabel, { fontWeight: '700', color: THEME.darkSlate }]}>
-                        Total Amount
-                      </Text>
+                      <Text style={styles.orderFinanceLabel}>Total Amount</Text>
                       <Text style={[styles.orderFinanceVal, { fontWeight: '800', color: THEME.oceanBlue }]}>
                         LKR {activeOrder.totalLKR ? activeOrder.totalLKR.toLocaleString() : '0'}
                       </Text>
                     </View>
                   </View>
-
-                  <View style={styles.orderFooterRow}>
-                    <Text style={styles.orderDeliveringTo}>
-                      Destination: {activeOrder.roomName ? activeOrder.roomName : (activeOrder.roomNumber || 'Room not assigned')}
-                    </Text>
-                    <Text style={styles.orderPrice}>
-                      ETA: {activeOrder.estimatedDelivery || '~30 min'}
-                    </Text>
-                  </View>
                 </View>
               ) : (
                 <View style={styles.emptyOrdersBox}>
                   <Ionicons name="receipt-outline" size={48} color={THEME.sandBeige} />
-                  <Text style={styles.emptyOrdersTitle}>No active in-room orders</Text>
+                  <Text style={styles.emptyOrdersTitle}>No in-room dining orders yet</Text>
                   <Text style={styles.emptyOrdersSub}>
-                    Select culinary dishes from the menu to build your in-room dining order. Real-time kitchen tracking will appear here.
+                    Select culinary dishes from the menu to build your in-room dining order. Real-time kitchen progress and recent receipts will appear here.
                   </Text>
                 </View>
               )}
@@ -1969,6 +2247,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  trackingBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  trackingRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: THEME.skyBlue,
+  },
+  trackingRefreshText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+  },
+  trackingNoticeText: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    color: THEME.mutedSlate,
+  },
   orderCode: {
     fontSize: 13,
     fontWeight: '800',
@@ -2014,6 +2317,145 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: THEME.darkSlate,
+  },
+  modalRefreshButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: THEME.skyBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ordersNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: THEME.skyBlue,
+    borderRadius: 8,
+    marginHorizontal: 18,
+    marginTop: 8,
+  },
+  ordersNoticeText: {
+    fontSize: 11,
+    color: THEME.darkSlate,
+    fontWeight: '500',
+  },
+  orderHistoryCard: {
+    backgroundColor: THEME.white,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: THEME.sandBeige,
+    shadowColor: THEME.darkSlate,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  orderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  orderCodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  orderCodeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.darkSlate,
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  orderMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F6',
+  },
+  orderMetaDate: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '500',
+  },
+  etaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: THEME.skyBlue,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  etaPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+  },
+  orderItemsBox: {
+    marginBottom: 8,
+  },
+  orderItemLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  orderItemName: {
+    fontSize: 12,
+    color: THEME.darkSlate,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  orderItemQtyPrice: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '500',
+  },
+  orderItemEmpty: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontStyle: 'italic',
+  },
+  orderCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F6',
+  },
+  orderTotalLabel: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '600',
+  },
+  orderTotalValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.oceanBlue,
   },
   bottomTab: {
     flexDirection: 'row',
