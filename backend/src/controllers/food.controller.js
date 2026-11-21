@@ -527,43 +527,71 @@ async function createOrder(req, res) {
 }
 
 /**
- * Controller: Get Single Order by ID
+ * Controller: Get Single Order by Internal Database ID
  * GET /api/food/orders/:id
+ *
+ * SECURITY & PRIVACY SPECIFICATION:
+ * Access to full order details by internal database integer ID exposes sensitive
+ * guest data (room assignment, delivery notes, dish items, and internal audit history).
+ * Anonymous access is strictly BLOCKED with HTTP 401 Unauthorized until User Management
+ * (Student ID: 22CIS0274) delivers JWT authentication and role authorization middleware.
+ *
+ * NOTE: For public guest order progress tracking, clients MUST use:
+ * GET /api/food/orders/code/:order_code
  */
 async function getOrderById(req, res) {
-  try {
-    const rawId = req.params.id;
-    const parsedId = Number(rawId);
+  return res.status(401).json({
+    status: 'error',
+    success: false,
+    message: 'Authentication required. Full order details cannot be accessed anonymously. For public order progress tracking, please use /api/food/orders/code/:order_code.',
+  });
+}
 
-    if (!rawId || !/^\d+$/.test(String(rawId).trim()) || !Number.isInteger(parsedId) || parsedId <= 0) {
+/**
+ * Controller: Get Safe Public Order Progress Tracking by Order Code
+ * GET /api/food/orders/code/:order_code
+ *
+ * Strict Privacy & Security Specification:
+ * - Rate limited by orderTrackingRateLimiter (max 30 req/min per IP)
+ * - Validates format against /^ORD-\d{8}-[A-F0-9]{6}$/ before querying DB
+ * - Exposes ONLY public progress indicators (order_code, status, estimated_delivery_minutes, created_at, item_count)
+ * - NEVER leaks room details, customer_id, special_note, financial totals, dish names, or internal staff history
+ */
+async function getOrderTrackingByCode(req, res) {
+  try {
+    const rawCode = req.params.order_code;
+    const normalizedCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+    if (!normalizedCode || !ORDER_CODE_REGEX.test(normalizedCode)) {
       return res.status(400).json({
         status: 'error',
         success: false,
-        message: 'Invalid order ID. Must be a positive integer.',
+        message: 'Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX (e.g. ORD-20261121-7F3A2B).',
       });
     }
 
-    const order = await Order.findById(parsedId);
+    const tracking = await Order.findTrackingByCode(normalizedCode);
 
-    if (!order) {
+    if (!tracking) {
       return res.status(404).json({
         status: 'error',
         success: false,
-        message: `Order with ID ${parsedId} not found.`,
+        message: `Order with code "${normalizedCode}" not found.`,
       });
     }
 
     return res.status(200).json({
       status: 'success',
       success: true,
-      data: order,
+      data: tracking,
     });
   } catch (error) {
-    console.error('Error in getOrderById:', error.message);
+    console.error('Error in getOrderTrackingByCode:', error.message);
     return res.status(500).json({
       status: 'error',
       success: false,
-      message: 'Failed to retrieve order details. Please try again later.',
+      message: 'Failed to retrieve order tracking information. Please try again later.',
     });
   }
 }
@@ -575,4 +603,5 @@ module.exports = {
   getDailySpecials,
   createOrder,
   getOrderById,
+  getOrderTrackingByCode,
 };
