@@ -260,7 +260,7 @@ function normalizeRoomString(str) {
  */
 async function createOrder(req, res) {
   try {
-    const { room_number, room_name, special_note, items, customer_id } = req.body || {};
+    const { room_number, room_name, special_note, items } = req.body || {};
 
     // 1. Validate room_number
     if (!room_number || typeof room_number !== 'string' || !room_number.trim()) {
@@ -320,26 +320,12 @@ async function createOrder(req, res) {
       validatedSpecialNote = trimmedNote.length > 0 ? trimmedNote : null;
     }
 
-    // 4. Validate customer_id (optional string placeholder for User Management module, max 64 chars)
-    let validatedCustomerId = null;
-    if (customer_id !== undefined && customer_id !== null) {
-      if (typeof customer_id !== 'string') {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          message: 'customer_id must be a string.',
-        });
-      }
-      const trimmedCustId = customer_id.trim();
-      if (trimmedCustId.length > 64) {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          message: 'customer_id exceeds maximum allowed length of 64 characters.',
-        });
-      }
-      validatedCustomerId = trimmedCustId.length > 0 ? trimmedCustId : null;
-    }
+    // 4. Derive customer identity exclusively from verified JWT identity
+    // Strictly NEVER trust customer_id from request body or headers
+    const validatedCustomerId =
+      req.user && (req.user.id !== undefined && req.user.id !== null)
+        ? String(req.user.id)
+        : (req.user && req.user.user_id ? String(req.user.user_id) : null);
 
     // 5. Validate items array
     if (!Array.isArray(items) || items.length === 0) {
@@ -540,11 +526,82 @@ async function createOrder(req, res) {
  * GET /api/food/orders/code/:order_code
  */
 async function getOrderById(req, res) {
-  return res.status(401).json({
-    status: 'error',
-    success: false,
-    message: 'Authentication required. Full order details cannot be accessed anonymously. For public order progress tracking, please use /api/food/orders/code/:order_code.',
-  });
+  try {
+    // 1. Enforce Authentication Guard
+    if (!req.user || (!req.user.id && !req.user.user_id)) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Full order details cannot be accessed anonymously. For public order progress tracking, please use /api/food/orders/code/:order_code.',
+      });
+    }
+
+    const rawId = req.params?.id;
+    const parsedId = Number(rawId);
+
+    if (!rawId || !/^\d+$/.test(String(rawId).trim()) || !Number.isInteger(parsedId) || parsedId <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'Invalid order ID. Order ID must be a positive integer.',
+      });
+    }
+
+    // 2. Retrieve authoritative order details from database
+    const order = await Order.findById(parsedId);
+
+    if (!order) {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        message: `Order with ID ${parsedId} not found.`,
+      });
+    }
+
+    // 3. Role-Based Access Control and IDOR Ownership Check
+    const userRole = (req.user.role || '').toLowerCase();
+    const userId = String(req.user.id || req.user.user_id);
+
+    // Admin and Staff roles have authorized operational access to view any resort order
+    if (userRole === 'admin' || userRole === 'staff') {
+      return res.status(200).json({
+        status: 'success',
+        success: true,
+        data: order,
+      });
+    }
+
+    // Guest role may access ONLY their own order (verified ownership match)
+    if (userRole === 'guest') {
+      if (!order.customer_id || String(order.customer_id) !== userId) {
+        return res.status(403).json({
+          status: 'error',
+          success: false,
+          message: 'Access denied. You do not have permission to view this order.',
+        });
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        success: true,
+        data: order,
+      });
+    }
+
+    // Any unapproved role is denied
+    return res.status(403).json({
+      status: 'error',
+      success: false,
+      message: 'Access denied. You do not have permission to view this order.',
+    });
+  } catch (error) {
+    console.error('Error in getOrderById:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve order details. Please try again later.',
+    });
+  }
 }
 
 /**
@@ -707,7 +764,11 @@ const ALLOWED_STAFF_TARGET_STATUSES = Object.freeze([
 async function updateOrderStatus(req, res) {
   try {
     // 1. Staff Authentication & Role Authorization Guard
-    if (!req.user || !req.user.user_id) {
+    const authenticatedUserId = req.user?.id !== undefined && req.user?.id !== null
+      ? req.user.id
+      : req.user?.user_id;
+
+    if (!req.user || authenticatedUserId === undefined || authenticatedUserId === null) {
       return res.status(401).json({
         status: 'error',
         success: false,
@@ -715,7 +776,8 @@ async function updateOrderStatus(req, res) {
       });
     }
 
-    if (req.user.role && !['Staff', 'Admin', 'KitchenStaff', 'DeliveryStaff'].includes(req.user.role)) {
+    const userRole = (req.user.role || '').toLowerCase();
+    if (!['staff', 'admin'].includes(userRole)) {
       return res.status(403).json({
         status: 'error',
         success: false,
@@ -772,8 +834,8 @@ async function updateOrderStatus(req, res) {
       validatedReason = trimmedReason.length > 0 ? trimmedReason : null;
     }
 
-    // 5. Secure identity extraction: strictly req.user.user_id
-    const changedByUserId = req.user.user_id;
+    // 5. Secure identity extraction: strictly String(authenticatedUserId) from verified JWT
+    const changedByUserId = String(authenticatedUserId);
 
     // 6. Execute atomic state machine transition
     const transitionResult = await Order.transitionStatus({
@@ -842,6 +904,227 @@ async function updateOrderStatus(req, res) {
   }
 }
 
+/**
+ * Controller: Get Authenticated Guest Order History
+ * GET /api/food/orders/my-orders
+ *
+ * Requirements:
+ * - Requires existing User Management authenticate middleware.
+ * - Derives customer_id strictly from String(req.user.id || req.user.user_id).
+ * - Never accepts customer_id from request body or query parameters.
+ * - Supports status filter.
+ * - Pagination: page (default 1), limit (default 10, max 50).
+ * - Returns pagination metadata: total, page, limit, totalPages, data.
+ */
+async function getMyOrders(req, res) {
+  try {
+    // 1. Enforce Authentication Guard
+    const authenticatedUserId = req.user?.id !== undefined && req.user?.id !== null
+      ? req.user.id
+      : req.user?.user_id;
+
+    if (!req.user || authenticatedUserId === undefined || authenticatedUserId === null) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Please sign in to view your order history.',
+      });
+    }
+
+    // Strictly derive customerId from verified JWT (never trust query or body)
+    const customerId = String(authenticatedUserId);
+
+    // 2. Parse & Validate Pagination
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+
+    let page = 1;
+    if (rawPage !== undefined) {
+      const parsedPage = parseInt(rawPage, 10);
+      page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+    }
+
+    let limit = 10;
+    if (rawLimit !== undefined) {
+      const parsedLimit = parseInt(rawLimit, 10);
+      if (Number.isInteger(parsedLimit) && parsedLimit >= 1) {
+        limit = Math.min(50, parsedLimit);
+      }
+    }
+
+    // 3. Parse & Validate Optional Status Filter
+    let statusFilter = undefined;
+    if (req.query.status !== undefined && req.query.status !== null) {
+      const rawStatus = String(req.query.status).trim();
+      if (rawStatus.length > 0) {
+        const matched = Order.ALL_STATUSES.find((s) => s.toLowerCase() === rawStatus.toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid status filter "${rawStatus}". Allowed statuses: ${Order.ALL_STATUSES.join(', ')}.`,
+          });
+        }
+        statusFilter = matched;
+      }
+    }
+
+    // 4. Query orders
+    const result = await Order.findByCustomerId(customerId, {
+      page,
+      limit,
+      status: statusFilter,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: result.orders.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+      data: result.orders,
+    });
+  } catch (error) {
+    console.error('Error in getMyOrders:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve order history. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Controller: List All Resort Orders with Filters & Pagination (Staff & Admin Only)
+ * GET /api/food/orders
+ *
+ * Requirements:
+ * - Requires authenticate and authorize('staff', 'admin').
+ * - Non-staff/admin roles receive 403 Forbidden.
+ * - Supports filters: status, room, date (YYYY-MM-DD), search.
+ * - Pagination: page (default 1), limit (default 20, max 100).
+ * - Returns order details with items and status history.
+ */
+async function getAllOrders(req, res) {
+  try {
+    // 1. Role Guard (Defense in Depth)
+    const userRole = (req.user?.role || '').toLowerCase();
+    if (!['staff', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        message: 'Access denied. Staff or admin privileges are required to view resort orders.',
+      });
+    }
+
+    // 2. Parse & Validate Pagination
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+
+    let page = 1;
+    if (rawPage !== undefined) {
+      const parsedPage = parseInt(rawPage, 10);
+      page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+    }
+
+    let limit = 20;
+    if (rawLimit !== undefined) {
+      const parsedLimit = parseInt(rawLimit, 10);
+      if (Number.isInteger(parsedLimit) && parsedLimit >= 1) {
+        limit = Math.min(100, parsedLimit);
+      }
+    }
+
+    // 3. Parse & Validate Filters
+    const filters = {};
+
+    // Status filter
+    if (req.query.status !== undefined && req.query.status !== null) {
+      const rawStatus = String(req.query.status).trim();
+      if (rawStatus.length > 0) {
+        const matched = Order.ALL_STATUSES.find((s) => s.toLowerCase() === rawStatus.toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid status filter "${rawStatus}". Allowed statuses: ${Order.ALL_STATUSES.join(', ')}.`,
+          });
+        }
+        filters.status = matched;
+      }
+    }
+
+    // Room filter
+    if (req.query.room !== undefined && req.query.room !== null) {
+      const rawRoom = String(req.query.room).trim();
+      if (rawRoom.length > 50) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'Room filter parameter exceeds maximum length of 50 characters.',
+        });
+      }
+      if (rawRoom.length > 0) {
+        filters.room = rawRoom;
+      }
+    }
+
+    // Date filter (YYYY-MM-DD)
+    if (req.query.date !== undefined && req.query.date !== null) {
+      const rawDate = String(req.query.date).trim();
+      if (rawDate.length > 0) {
+        const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+        if (!DATE_REGEX.test(rawDate) || isNaN(Date.parse(rawDate))) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid date filter format "${rawDate}". Expected format: YYYY-MM-DD (e.g. 2026-11-21).`,
+          });
+        }
+        filters.date = rawDate;
+      }
+    }
+
+    // Search filter
+    if (req.query.search !== undefined && req.query.search !== null) {
+      const rawSearch = String(req.query.search).trim();
+      if (rawSearch.length > 100) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'Search query parameter exceeds maximum length of 100 characters.',
+        });
+      }
+      if (rawSearch.length > 0) {
+        filters.search = rawSearch;
+      }
+    }
+
+    // 4. Query all orders
+    const result = await Order.findAll(filters, { page, limit });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: result.orders.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+      data: result.orders,
+    });
+  } catch (error) {
+    console.error('Error in getAllOrders:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve resort orders. Please try again later.',
+    });
+  }
+}
+
 module.exports = {
   getCategories,
   getFoodItems,
@@ -852,4 +1135,6 @@ module.exports = {
   getOrderTrackingByCode,
   getBatchOrderTracking,
   updateOrderStatus,
+  getMyOrders,
+  getAllOrders,
 };

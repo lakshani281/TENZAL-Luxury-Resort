@@ -39,8 +39,10 @@ import { Platform } from 'react-native';
 // TOGGLE THIS TO TRUE WHEN TESTING ON A PHYSICAL PHONE VIA EXPO GO:
 export const USE_PHYSICAL_DEVICE = false;
 
-// YOUR COMPUTER'S LOCAL NETWORK IP (Run 'ipconfig' in Windows PowerShell):
-export const DEV_MACHINE_LAN_IP = '10.79.51.130';
+// Configurable LAN IP for physical device testing (or pass EXPO_PUBLIC_DEV_LAN_IP env variable).
+// Default empty to prevent accidental connection to a previous developer's stale subnet.
+export const DEV_MACHINE_LAN_IP =
+  (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_DEV_LAN_IP) || '';
 
 // Backend port configured in backend/.env
 export const BACKEND_PORT = 5000;
@@ -49,23 +51,30 @@ export const BACKEND_PORT = 5000;
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 /**
+ * Resolves the backend host origin for the current runtime platform.
+ * 
+ * @returns {string} The backend origin (e.g. 'http://localhost:5000')
+ */
+export function getBackendOrigin() {
+  if (USE_PHYSICAL_DEVICE) {
+    const lanIp = DEV_MACHINE_LAN_IP && DEV_MACHINE_LAN_IP.trim();
+    if (lanIp) {
+      return `http://${lanIp}:${BACKEND_PORT}`;
+    }
+  }
+  if (Platform.OS === 'android') {
+    return `http://10.0.2.2:${BACKEND_PORT}`;
+  }
+  return `http://localhost:${BACKEND_PORT}`;
+}
+
+/**
  * Resolves the appropriate base URL for the current runtime platform.
  * 
  * @returns {string} The base URL for the food API
  */
 export function getBaseUrl() {
-  // If physical device mode is explicitly turned on
-  if (USE_PHYSICAL_DEVICE && DEV_MACHINE_LAN_IP) {
-    return `http://${DEV_MACHINE_LAN_IP}:${BACKEND_PORT}/api/food`;
-  }
-
-  // Standard Android Studio Emulator loopback address
-  if (Platform.OS === 'android') {
-    return `http://10.0.2.2:${BACKEND_PORT}/api/food`;
-  }
-
-  // Web and iOS Simulator use localhost
-  return `http://localhost:${BACKEND_PORT}/api/food`;
+  return `${getBackendOrigin()}/api/food`;
 }
 
 /**
@@ -346,9 +355,10 @@ export async function getFoodItemById(id) {
  * @param {string} orderData.room_name - Verified room name (e.g. 'Uva Valley View Room — Room 3')
  * @param {string} [orderData.special_note] - Optional dietary or delivery notes
  * @param {Array<Object>} orderData.items - Array of items (e.g. [{ item_id: 6, quantity: 1 }])
+ * @param {string|null} [token=null] - Optional guest JWT Bearer token for authenticated checkout
  * @returns {Promise<Object>} Created order data from backend
  */
-export async function createOrder(orderData) {
+export async function createOrder(orderData, token = null) {
   if (!orderData || typeof orderData !== 'object') {
     throw new Error('Order data is required to place an order.');
   }
@@ -419,8 +429,14 @@ export async function createOrder(orderData) {
   }
 
   const url = buildUrl('/orders');
+  const headers = {};
+  if (token && typeof token === 'string' && token.trim().length > 0) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+
   const json = await request(url, {
     method: 'POST',
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -429,6 +445,42 @@ export async function createOrder(orderData) {
   }
 
   return json.data;
+}
+
+/**
+ * Retrieves authenticated guest order history.
+ * Endpoint: GET /api/food/orders/my-orders
+ *
+ * @param {string} token - Authenticated guest Bearer JWT token
+ * @param {Object} [options={}]
+ * @param {number} [options.page=1]
+ * @param {number} [options.limit=10]
+ * @param {string} [options.status] - Optional status filter ('Pending', 'In Kitchen', etc.)
+ * @returns {Promise<{ count: number, total: number, page: number, limit: number, totalPages: number, data: Array }>}
+ */
+export async function getMyOrders(token, { page = 1, limit = 10, status } = {}) {
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    throw new Error('Authentication token is required to view your order history.');
+  }
+
+  const params = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  if (status && typeof status === 'string' && status.trim().length > 0 && status.toLowerCase() !== 'all') {
+    params.status = status.trim();
+  }
+
+  const url = buildUrl('/orders/my-orders', params);
+  const json = await request(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token.trim()}`,
+    },
+  });
+
+  return json;
 }
 
 /**
