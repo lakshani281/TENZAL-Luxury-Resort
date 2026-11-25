@@ -5,6 +5,7 @@ import { ToastProvider } from './components/common/Toast';
 import OverviewPage from './pages/OverviewPage';
 import RoomsPage from './pages/RoomsPage';
 import BookingsPage from './pages/BookingsPage';
+import FoodOrdersPage from './pages/FoodOrdersPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 
 function App() {
@@ -31,14 +32,10 @@ function App() {
                 />
               }
             />
+            {/* Food Ordering Module (Student ID: 22CIS0328) */}
             <Route
               path="/food-orders"
-              element={
-                <PlaceholderPage
-                  title="Food Orders"
-                  subtitle="Live order management and kitchen updates"
-                />
-              }
+              element={<FoodOrdersPage />}
             />
             <Route
               path="/gallery"
