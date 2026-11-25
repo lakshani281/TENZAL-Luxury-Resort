@@ -260,7 +260,7 @@ function normalizeRoomString(str) {
  */
 async function createOrder(req, res) {
   try {
-    const { room_number, room_name, special_note, items, customer_id } = req.body || {};
+    const { room_number, room_name, special_note, items } = req.body || {};
 
     // 1. Validate room_number
     if (!room_number || typeof room_number !== 'string' || !room_number.trim()) {
@@ -320,26 +320,12 @@ async function createOrder(req, res) {
       validatedSpecialNote = trimmedNote.length > 0 ? trimmedNote : null;
     }
 
-    // 4. Validate customer_id (optional string placeholder for User Management module, max 64 chars)
-    let validatedCustomerId = null;
-    if (customer_id !== undefined && customer_id !== null) {
-      if (typeof customer_id !== 'string') {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          message: 'customer_id must be a string.',
-        });
-      }
-      const trimmedCustId = customer_id.trim();
-      if (trimmedCustId.length > 64) {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          message: 'customer_id exceeds maximum allowed length of 64 characters.',
-        });
-      }
-      validatedCustomerId = trimmedCustId.length > 0 ? trimmedCustId : null;
-    }
+    // 4. Derive customer identity exclusively from verified JWT identity
+    // Strictly NEVER trust customer_id from request body or headers
+    const validatedCustomerId =
+      req.user && (req.user.id !== undefined && req.user.id !== null)
+        ? String(req.user.id)
+        : (req.user && req.user.user_id ? String(req.user.user_id) : null);
 
     // 5. Validate items array
     if (!Array.isArray(items) || items.length === 0) {
@@ -527,22 +513,41 @@ async function createOrder(req, res) {
 }
 
 /**
- * Controller: Get Single Order by ID
+ * Controller: Get Single Order by Internal Database ID
  * GET /api/food/orders/:id
+ *
+ * SECURITY & PRIVACY SPECIFICATION:
+ * Access to full order details by internal database integer ID exposes sensitive
+ * guest data (room assignment, delivery notes, dish items, and internal audit history).
+ * Anonymous access is strictly BLOCKED with HTTP 401 Unauthorized until User Management
+ * (Student ID: 22CIS0274) delivers JWT authentication and role authorization middleware.
+ *
+ * NOTE: For public guest order progress tracking, clients MUST use:
+ * GET /api/food/orders/code/:order_code
  */
 async function getOrderById(req, res) {
   try {
-    const rawId = req.params.id;
+    // 1. Enforce Authentication Guard
+    if (!req.user || (!req.user.id && !req.user.user_id)) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Full order details cannot be accessed anonymously. For public order progress tracking, please use /api/food/orders/code/:order_code.',
+      });
+    }
+
+    const rawId = req.params?.id;
     const parsedId = Number(rawId);
 
     if (!rawId || !/^\d+$/.test(String(rawId).trim()) || !Number.isInteger(parsedId) || parsedId <= 0) {
       return res.status(400).json({
         status: 'error',
         success: false,
-        message: 'Invalid order ID. Must be a positive integer.',
+        message: 'Invalid order ID. Order ID must be a positive integer.',
       });
     }
 
+    // 2. Retrieve authoritative order details from database
     const order = await Order.findById(parsedId);
 
     if (!order) {
@@ -553,17 +558,569 @@ async function getOrderById(req, res) {
       });
     }
 
-    return res.status(200).json({
-      status: 'success',
-      success: true,
-      data: order,
+    // 3. Role-Based Access Control and IDOR Ownership Check
+    const userRole = (req.user.role || '').toLowerCase();
+    const userId = String(req.user.id || req.user.user_id);
+
+    // Admin and Staff roles have authorized operational access to view any resort order
+    if (userRole === 'admin' || userRole === 'staff') {
+      return res.status(200).json({
+        status: 'success',
+        success: true,
+        data: order,
+      });
+    }
+
+    // Guest role may access ONLY their own order (verified ownership match)
+    if (userRole === 'guest') {
+      if (!order.customer_id || String(order.customer_id) !== userId) {
+        return res.status(403).json({
+          status: 'error',
+          success: false,
+          message: 'Access denied. You do not have permission to view this order.',
+        });
+      }
+
+      return res.status(200).json({
+        status: 'success',
+        success: true,
+        data: order,
+      });
+    }
+
+    // Any unapproved role is denied
+    return res.status(403).json({
+      status: 'error',
+      success: false,
+      message: 'Access denied. You do not have permission to view this order.',
     });
   } catch (error) {
-    console.error('Error in getOrderById:', error.message);
+    console.error('Error in getOrderById:', error.message || error);
     return res.status(500).json({
       status: 'error',
       success: false,
       message: 'Failed to retrieve order details. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Controller: Get Safe Public Order Progress Tracking by Order Code
+ * GET /api/food/orders/code/:order_code
+ *
+ * Strict Privacy & Security Specification:
+ * - Rate limited by orderTrackingRateLimiter (max 30 req/min per IP)
+ * - Validates format against /^ORD-\d{8}-[A-F0-9]{6}$/ before querying DB
+ * - Exposes ONLY public progress indicators (order_code, status, estimated_delivery_minutes, created_at, item_count)
+ * - NEVER leaks room details, customer_id, special_note, financial totals, dish names, or internal staff history
+ */
+async function getOrderTrackingByCode(req, res) {
+  try {
+    const rawCode = req.params.order_code;
+    const normalizedCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+    if (!normalizedCode || !ORDER_CODE_REGEX.test(normalizedCode)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX (e.g. ORD-20261121-7F3A2B).',
+      });
+    }
+
+    const tracking = await Order.findTrackingByCode(normalizedCode);
+
+    if (!tracking) {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        message: `Order with code "${normalizedCode}" not found.`,
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      data: tracking,
+    });
+  } catch (error) {
+    console.error('Error in getOrderTrackingByCode:', error.message);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve order tracking information. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Controller: Get Batch Public Order Progress Tracking
+ * POST /api/food/orders/tracking/batch
+ *
+ * Request Body:
+ * - order_codes: Array of 1 to 10 order codes (e.g. ['ORD-20261121-7F3A2B', ...])
+ *
+ * Strict Privacy & Security Specification:
+ * - Rate limited by orderTrackingRateLimiter (shared 30 req/min per IP)
+ * - Requires an array between 1 and 10 codes
+ * - Normalizes codes to uppercase and validates format against /^ORD-\d{8}-[A-F0-9]{6}$/
+ * - Exposes ONLY public progress indicators (order_code, status, estimated_delivery_minutes, created_at, item_count)
+ * - NEVER leaks room details, customer_id, special_note, financial totals, dish names, or internal staff history
+ * - Avoids exposing guest identities or ownership
+ */
+async function getBatchOrderTracking(req, res) {
+  try {
+    const { order_codes } = req.body || {};
+
+    if (!order_codes || !Array.isArray(order_codes)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'order_codes is required and must be an array of order codes.',
+      });
+    }
+
+    if (order_codes.length === 0 || order_codes.length > 10) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'order_codes array must contain between 1 and 10 order codes.',
+      });
+    }
+
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+    const normalizedCodes = [];
+
+    for (let i = 0; i < order_codes.length; i++) {
+      const code = order_codes[i];
+      if (typeof code !== 'string') {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: `Invalid order code at index ${i}. Each order code must be a string.`,
+        });
+      }
+
+      const trimmedCode = code.trim().toUpperCase();
+      if (!ORDER_CODE_REGEX.test(trimmedCode)) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: `Invalid order code format at index ${i}: "${code}". Expected format: ORD-YYYYMMDD-XXXXXX.`,
+        });
+      }
+
+      normalizedCodes.push(trimmedCode);
+    }
+
+    // Deduplicate codes while preserving order
+    const uniqueCodes = Array.from(new Set(normalizedCodes));
+
+    const trackingList = await Order.findBatchTrackingByCodes(uniqueCodes);
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: trackingList.length,
+      data: trackingList,
+    });
+  } catch (error) {
+    console.error('Error in getBatchOrderTracking:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve batch order tracking information. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Allowed target statuses for transition via staff update endpoint.
+ * 'Pending' is the initial placement state and cannot be transitioned into.
+ */
+const ALLOWED_STAFF_TARGET_STATUSES = Object.freeze([
+  'In Kitchen',
+  'Out for Delivery',
+  'Delivered',
+  'Cancelled',
+]);
+
+/**
+ * Controller: Update Order Status (Staff Only)
+ * PATCH /api/food/orders/code/:order_code/status
+ *
+ * SECURITY & AUTHENTICATION SPECIFICATION:
+ * - Requires verified staff authentication from User Management (Student ID: 22CIS0274) JWT middleware.
+ * - Strictly rejects unauthenticated requests (missing req.user or req.user.user_id) with HTTP 401.
+ * - Strictly rejects non-staff roles (e.g. Guests) with HTTP 403.
+ * - Strictly obtains changedByUserId from verified req.user.user_id.
+ *   NEVER trusts req.body, req.query, req.params, or arbitrary headers (e.g. x-user-id).
+ * - Enforces order code format /^ORD-\d{8}-[A-F0-9]{6}$/i.
+ * - Atomically executes state transition and inserts order_status_history via Order.transitionStatus.
+ *
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+async function updateOrderStatus(req, res) {
+  try {
+    // 1. Staff Authentication & Role Authorization Guard
+    const authenticatedUserId = req.user?.id !== undefined && req.user?.id !== null
+      ? req.user.id
+      : req.user?.user_id;
+
+    if (!req.user || authenticatedUserId === undefined || authenticatedUserId === null) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Verified staff credentials must be provided via authentication middleware.',
+      });
+    }
+
+    const userRole = (req.user.role || '').toLowerCase();
+    if (!['staff', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        message: 'Access denied. Staff privileges are required to update order status.',
+      });
+    }
+
+    // 2. Validate order_code URL parameter
+    const rawCode = req.params?.order_code;
+    const normalizedCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : '';
+    const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/i;
+
+    if (!normalizedCode || !ORDER_CODE_REGEX.test(normalizedCode)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: 'Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX (e.g. ORD-20261121-7F3A2B).',
+      });
+    }
+
+    // 3. Validate body parameters
+    const { status, change_reason, changeReason } = req.body || {};
+
+    if (!status || typeof status !== 'string' || !ALLOWED_STAFF_TARGET_STATUSES.includes(status.trim())) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: `Invalid or missing status. Allowed target statuses: ${ALLOWED_STAFF_TARGET_STATUSES.join(', ')}.`,
+      });
+    }
+
+    const targetStatus = status.trim();
+
+    // 4. Validate change_reason (optional for progression, max 255 chars)
+    const rawReason = change_reason !== undefined ? change_reason : changeReason;
+    let validatedReason = null;
+
+    if (rawReason !== undefined && rawReason !== null) {
+      if (typeof rawReason !== 'string') {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'change_reason must be a string.',
+        });
+      }
+      const trimmedReason = rawReason.trim();
+      if (trimmedReason.length > 255) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'change_reason exceeds maximum allowed length of 255 characters.',
+        });
+      }
+      validatedReason = trimmedReason.length > 0 ? trimmedReason : null;
+    }
+
+    // 5. Secure identity extraction: strictly String(authenticatedUserId) from verified JWT
+    const changedByUserId = String(authenticatedUserId);
+
+    // 6. Execute atomic state machine transition
+    const transitionResult = await Order.transitionStatus({
+      orderCode: normalizedCode,
+      nextStatus: targetStatus,
+      changeReason: validatedReason,
+      changedByUserId,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      message: `Order ${normalizedCode} status successfully updated to "${transitionResult.status}".`,
+      data: transitionResult,
+    });
+  } catch (error) {
+    if (error.code === 'ORDER_NOT_FOUND') {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        message: error.message || `Order with code not found.`,
+      });
+    }
+
+    if (error.code === 'TERMINAL_STATE') {
+      return res.status(409).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+        current_status: error.currentStatus,
+      });
+    }
+
+    if (error.code === 'INVALID_TRANSITION') {
+      return res.status(422).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+        current_status: error.currentStatus,
+        target_status: error.nextStatus,
+      });
+    }
+
+    if (error.code === 'REASON_REQUIRED') {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (error.code === 'INVALID_STATUS' || error.code === 'INVALID_ARGUMENT') {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error('Error in updateOrderStatus:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to update order status. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Controller: Get Authenticated Guest Order History
+ * GET /api/food/orders/my-orders
+ *
+ * Requirements:
+ * - Requires existing User Management authenticate middleware.
+ * - Derives customer_id strictly from String(req.user.id || req.user.user_id).
+ * - Never accepts customer_id from request body or query parameters.
+ * - Supports status filter.
+ * - Pagination: page (default 1), limit (default 10, max 50).
+ * - Returns pagination metadata: total, page, limit, totalPages, data.
+ */
+async function getMyOrders(req, res) {
+  try {
+    // 1. Enforce Authentication Guard
+    const authenticatedUserId = req.user?.id !== undefined && req.user?.id !== null
+      ? req.user.id
+      : req.user?.user_id;
+
+    if (!req.user || authenticatedUserId === undefined || authenticatedUserId === null) {
+      return res.status(401).json({
+        status: 'error',
+        success: false,
+        message: 'Authentication required. Please sign in to view your order history.',
+      });
+    }
+
+    // Strictly derive customerId from verified JWT (never trust query or body)
+    const customerId = String(authenticatedUserId);
+
+    // 2. Parse & Validate Pagination
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+
+    let page = 1;
+    if (rawPage !== undefined) {
+      const parsedPage = parseInt(rawPage, 10);
+      page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+    }
+
+    let limit = 10;
+    if (rawLimit !== undefined) {
+      const parsedLimit = parseInt(rawLimit, 10);
+      if (Number.isInteger(parsedLimit) && parsedLimit >= 1) {
+        limit = Math.min(50, parsedLimit);
+      }
+    }
+
+    // 3. Parse & Validate Optional Status Filter
+    let statusFilter = undefined;
+    if (req.query.status !== undefined && req.query.status !== null) {
+      const rawStatus = String(req.query.status).trim();
+      if (rawStatus.length > 0) {
+        const matched = Order.ALL_STATUSES.find((s) => s.toLowerCase() === rawStatus.toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid status filter "${rawStatus}". Allowed statuses: ${Order.ALL_STATUSES.join(', ')}.`,
+          });
+        }
+        statusFilter = matched;
+      }
+    }
+
+    // 4. Query orders
+    const result = await Order.findByCustomerId(customerId, {
+      page,
+      limit,
+      status: statusFilter,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: result.orders.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+      data: result.orders,
+    });
+  } catch (error) {
+    console.error('Error in getMyOrders:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve order history. Please try again later.',
+    });
+  }
+}
+
+/**
+ * Controller: List All Resort Orders with Filters & Pagination (Staff & Admin Only)
+ * GET /api/food/orders
+ *
+ * Requirements:
+ * - Requires authenticate and authorize('staff', 'admin').
+ * - Non-staff/admin roles receive 403 Forbidden.
+ * - Supports filters: status, room, date (YYYY-MM-DD), search.
+ * - Pagination: page (default 1), limit (default 20, max 100).
+ * - Returns order details with items and status history.
+ */
+async function getAllOrders(req, res) {
+  try {
+    // 1. Role Guard (Defense in Depth)
+    const userRole = (req.user?.role || '').toLowerCase();
+    if (!['staff', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        message: 'Access denied. Staff or admin privileges are required to view resort orders.',
+      });
+    }
+
+    // 2. Parse & Validate Pagination
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+
+    let page = 1;
+    if (rawPage !== undefined) {
+      const parsedPage = parseInt(rawPage, 10);
+      page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+    }
+
+    let limit = 20;
+    if (rawLimit !== undefined) {
+      const parsedLimit = parseInt(rawLimit, 10);
+      if (Number.isInteger(parsedLimit) && parsedLimit >= 1) {
+        limit = Math.min(100, parsedLimit);
+      }
+    }
+
+    // 3. Parse & Validate Filters
+    const filters = {};
+
+    // Status filter
+    if (req.query.status !== undefined && req.query.status !== null) {
+      const rawStatus = String(req.query.status).trim();
+      if (rawStatus.length > 0) {
+        const matched = Order.ALL_STATUSES.find((s) => s.toLowerCase() === rawStatus.toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid status filter "${rawStatus}". Allowed statuses: ${Order.ALL_STATUSES.join(', ')}.`,
+          });
+        }
+        filters.status = matched;
+      }
+    }
+
+    // Room filter
+    if (req.query.room !== undefined && req.query.room !== null) {
+      const rawRoom = String(req.query.room).trim();
+      if (rawRoom.length > 50) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'Room filter parameter exceeds maximum length of 50 characters.',
+        });
+      }
+      if (rawRoom.length > 0) {
+        filters.room = rawRoom;
+      }
+    }
+
+    // Date filter (YYYY-MM-DD)
+    if (req.query.date !== undefined && req.query.date !== null) {
+      const rawDate = String(req.query.date).trim();
+      if (rawDate.length > 0) {
+        const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+        if (!DATE_REGEX.test(rawDate) || isNaN(Date.parse(rawDate))) {
+          return res.status(400).json({
+            status: 'error',
+            success: false,
+            message: `Invalid date filter format "${rawDate}". Expected format: YYYY-MM-DD (e.g. 2026-11-21).`,
+          });
+        }
+        filters.date = rawDate;
+      }
+    }
+
+    // Search filter
+    if (req.query.search !== undefined && req.query.search !== null) {
+      const rawSearch = String(req.query.search).trim();
+      if (rawSearch.length > 100) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          message: 'Search query parameter exceeds maximum length of 100 characters.',
+        });
+      }
+      if (rawSearch.length > 0) {
+        filters.search = rawSearch;
+      }
+    }
+
+    // 4. Query all orders
+    const result = await Order.findAll(filters, { page, limit });
+
+    return res.status(200).json({
+      status: 'success',
+      success: true,
+      count: result.orders.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
+      data: result.orders,
+    });
+  } catch (error) {
+    console.error('Error in getAllOrders:', error.message || error);
+    return res.status(500).json({
+      status: 'error',
+      success: false,
+      message: 'Failed to retrieve resort orders. Please try again later.',
     });
   }
 }
@@ -575,4 +1132,9 @@ module.exports = {
   getDailySpecials,
   createOrder,
   getOrderById,
+  getOrderTrackingByCode,
+  getBatchOrderTracking,
+  updateOrderStatus,
+  getMyOrders,
+  getAllOrders,
 };

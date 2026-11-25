@@ -11,6 +11,23 @@
   },
   "keywords": ["resort", "booking", "hotel", "luxury", "food-ordering"],
   "author": "",
+  "description": "Unified Backend API for TENZAL Luxury Resort (User Management, Room Booking, Food Ordering, About Us)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "dev:nodemon": "nodemon server.js"
+  },
+  "keywords": [
+    "tenzal",
+    "luxury-resort",
+    "room-booking",
+    "food-ordering",
+    "user-management",
+    "express",
+    "api"
+  ],
+  "author": "TENZAL Development Team (22CIS0274, 22CIS0276, 22CIS0328)",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -20,7 +20,24 @@ import {
   getDailySpecials,
   getFoodItems,
   createOrder,
+  getOrderTrackingByCode,
+  getBatchOrderTracking,
+  getMyOrders,
 } from '../services/foodApi';
+import {
+  loadRecentOrders,
+  saveOrderReceipt,
+  updateOrderStatusInStorage,
+  updateBatchOrderStatuses,
+} from '../services/orderStorage';
+import {
+  getAuthToken,
+  getAuthUser,
+  clearAuthSession,
+  login as loginGuest,
+  logout as logoutGuest,
+  isTokenExpired,
+} from '../services/authStorage';
 
 // Soft Coastal Luxury Theme
 const THEME = {
@@ -32,6 +49,45 @@ const THEME = {
   darkSlate: '#263B46',
   mutedSlate: '#5E7480',
   white: '#FFFFFF',
+};
+
+// Thematic Order Status Visual Configuration
+const STATUS_CONFIG = {
+  'Pending': {
+    label: 'Pending',
+    icon: 'time-outline',
+    textColor: '#B45309',
+    bgColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  'In Kitchen': {
+    label: 'In Kitchen',
+    icon: 'flame-outline',
+    textColor: '#1D6377',
+    bgColor: '#DCEEF4',
+    borderColor: '#B6DDE9',
+  },
+  'Out for Delivery': {
+    label: 'Out for Delivery',
+    icon: 'bicycle-outline',
+    textColor: '#0F766E',
+    bgColor: '#CCFBF1',
+    borderColor: '#99F6E4',
+  },
+  'Delivered': {
+    label: 'Delivered',
+    icon: 'checkmark-done-circle',
+    textColor: '#15803D',
+    bgColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  'Cancelled': {
+    label: 'Cancelled',
+    icon: 'close-circle',
+    textColor: '#991B1B',
+    bgColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
 };
 
 // Approved Delivery Rooms (Strictly verified 3 rooms)
@@ -80,6 +136,229 @@ export default function FoodMenuScreen({ navigation, onBack }) {
   // Order Placement submission states
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+
+  // Safe Public Order Tracking refresh states
+  const [isRefreshingTracking, setIsRefreshingTracking] = useState(false);
+  const [trackingNotice, setTrackingNotice] = useState(null);
+
+  // Multi-Order History & Batch Tracking states (Student ID: 22CIS0328 - Phase 3)
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
+  const [ordersNotice, setOrdersNotice] = useState(null);
+
+  // Mobile Authentication & Authenticated Orders states (Student ID: 22CIS0328 - Phase 4 Step 5C)
+  const [authToken, setAuthToken] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [accountOrders, setAccountOrders] = useState([]);
+  const [isLoadingAccountOrders, setIsLoadingAccountOrders] = useState(false);
+  const [accountOrdersError, setAccountOrdersError] = useState(null);
+  const [accountOrdersTotal, setAccountOrdersTotal] = useState(0);
+  const [ordersViewTab, setOrdersViewTab] = useState('account'); // 'account' | 'device'
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+
+  // Fetch authenticated account orders from backend (GET /api/food/orders/my-orders)
+  const fetchAccountOrders = useCallback(async (token) => {
+    const activeToken = token || authToken;
+    if (!activeToken) {
+      setAccountOrders([]);
+      setAccountOrdersTotal(0);
+      return;
+    }
+    setIsLoadingAccountOrders(true);
+    setAccountOrdersError(null);
+    try {
+      const res = await getMyOrders(activeToken, { page: 1, limit: 20 });
+      if (res && Array.isArray(res.data)) {
+        setAccountOrders(res.data);
+        setAccountOrdersTotal(res.total || res.data.length);
+      } else {
+        setAccountOrders([]);
+        setAccountOrdersTotal(0);
+      }
+    } catch (err) {
+      console.warn('[FoodMenuScreen] Failed to fetch account orders:', err);
+      if (err.status === 401) {
+        setAccountOrdersError('Authentication session expired (HTTP 401). Please sign in again.');
+      } else {
+        setAccountOrdersError(err.message || 'Unable to retrieve account orders. Please check your connection and retry.');
+      }
+    } finally {
+      setIsLoadingAccountOrders(false);
+    }
+  }, [authToken]);
+
+  // Load stored orders and active auth session on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function initSession() {
+      try {
+        const stored = await loadRecentOrders();
+        if (isMounted && Array.isArray(stored)) {
+          setRecentOrders(stored);
+        }
+      } catch (err) {
+        console.warn('[FoodMenuScreen] Failed to load recent orders on mount:', err);
+      }
+
+      try {
+        const token = await getAuthToken();
+        const user = await getAuthUser();
+        if (token && !isTokenExpired(token)) {
+          if (isMounted) {
+            setAuthToken(token);
+            setAuthUser(user);
+            setOrdersViewTab('account');
+          }
+          fetchAccountOrders(token);
+        } else if (token && isTokenExpired(token)) {
+          await clearAuthSession();
+          if (isMounted) {
+            setAuthToken(null);
+            setAuthUser(null);
+            setOrdersViewTab('device');
+          }
+        } else {
+          if (isMounted) {
+            setOrdersViewTab('device');
+          }
+        }
+      } catch (err) {
+        console.warn('[FoodMenuScreen] Auth init error:', err);
+      }
+    }
+    initSession();
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchAccountOrders]);
+
+  // Handle guest login submission
+  const handleLoginSubmit = async (demoCredentials = null) => {
+    const email = (demoCredentials?.email || loginEmail || '').trim();
+    const password = demoCredentials?.password || loginPassword || '';
+
+    if (!email) {
+      setLoginError('Please enter your resort account email address.');
+      return;
+    }
+    if (!password) {
+      setLoginError('Please enter your account password.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      const { token, user } = await loginGuest({ email, password });
+      setAuthToken(token);
+      setAuthUser(user);
+      setShowLoginModal(false);
+      setLoginEmail('');
+      setLoginPassword('');
+      setOrdersViewTab('account');
+      setNotificationMessage(`Welcome back, ${user.name || user.email}!`);
+      setTimeout(() => setNotificationMessage(null), 4000);
+      fetchAccountOrders(token);
+    } catch (err) {
+      console.error('[FoodMenuScreen] Login failed:', err);
+      setLoginError(err.message || 'Login failed. Please verify your email and password.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Handle guest logout (clears auth session; PRESERVES local device receipts!)
+  const handleLogout = async () => {
+    try {
+      await logoutGuest();
+      setAuthToken(null);
+      setAuthUser(null);
+      setAccountOrders([]);
+      setAccountOrdersTotal(0);
+      setOrdersViewTab('device');
+      setNotificationMessage('Signed out. Local device receipts remain saved.');
+      setTimeout(() => setNotificationMessage(null), 4000);
+    } catch (err) {
+      console.warn('[FoodMenuScreen] Logout error:', err);
+    }
+  };
+
+  // Refresh multiple orders via safe public batch tracking endpoint (max 10 codes)
+  const handleRefreshBatchTracking = async () => {
+    if (isRefreshingOrders || !recentOrders || recentOrders.length === 0) return;
+
+    const codes = recentOrders
+      .map((o) => o.orderCode)
+      .filter((c) => typeof c === 'string' && c.trim().length > 0)
+      .slice(0, 10);
+
+    if (codes.length === 0) return;
+
+    setIsRefreshingOrders(true);
+    setOrdersNotice(null);
+
+    try {
+      const trackingList = await getBatchOrderTracking(codes);
+
+      if (Array.isArray(trackingList) && trackingList.length > 0) {
+        // Atomically validate and persist status updates to local storage
+        const updatedOrders = await updateBatchOrderStatuses(trackingList);
+        setRecentOrders(updatedOrders);
+        setOrdersNotice('Kitchen status refreshed.');
+      } else {
+        setOrdersNotice('All orders are up to date.');
+      }
+    } catch (err) {
+      if (err.status === 429) {
+        setOrdersNotice('Rate limit reached (max 30/min). Displaying latest known status.');
+      } else {
+        setOrdersNotice('Unable to reach kitchen tracking. Displaying latest known status.');
+      }
+    } finally {
+      setIsRefreshingOrders(false);
+    }
+  };
+
+  // Refresh active order progress via safe public tracking endpoint
+  const handleRefreshTracking = async () => {
+    const code = activeOrder?.orderCode || (activeOrder?.orderId && String(activeOrder.orderId).startsWith('ORD-') ? activeOrder.orderId : null);
+    if (!code || isRefreshingTracking) return;
+
+    setIsRefreshingTracking(true);
+    setTrackingNotice(null);
+
+    try {
+      const tracking = await getOrderTrackingByCode(code);
+      if (tracking) {
+        setActiveOrder((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            status: tracking.status || prev.status,
+            estimatedDelivery: tracking.estimated_delivery_minutes
+              ? `~${tracking.estimated_delivery_minutes} minutes`
+              : prev.estimatedDelivery,
+            estimatedDeliveryMinutes: tracking.estimated_delivery_minutes || prev.estimatedDeliveryMinutes,
+          };
+        });
+        setTrackingNotice('Kitchen status refreshed.');
+      }
+    } catch (err) {
+      if (err.status === 429) {
+        setTrackingNotice('Rate limit reached (max 30/min). Please wait a moment.');
+      } else if (err.status === 404) {
+        setTrackingNotice('Order record not found in active kitchen system.');
+      } else {
+        setTrackingNotice('Unable to reach kitchen tracking. Check connection.');
+      }
+    } finally {
+      setIsRefreshingTracking(false);
+    }
+  };
 
   // Load categories, specials, and menu items from backend with Promise.allSettled
   const loadMenuData = useCallback(async (isRefresh = false) => {
@@ -240,6 +519,14 @@ export default function FoodMenuScreen({ navigation, onBack }) {
       quantity: line.quantity,
     }));
 
+    // Verify token expiry before submitting
+    let tokenToSend = authToken;
+    if (authToken && isTokenExpired(authToken)) {
+      // Strict requirement: Invalid/expired JWT does NOT silently become anonymous!
+      setCheckoutError('Your authentication session has expired. Please sign in again, or sign out to order as an in-room guest.');
+      return;
+    }
+
     setIsPlacingOrder(true);
 
     try {
@@ -250,10 +537,10 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         items: payloadItems,
       };
 
-      const backendOrder = await createOrder(orderPayload);
+      const backendOrder = await createOrder(orderPayload, tokenToSend);
 
-      // Successfully placed real order in PostgreSQL
-      setActiveOrder({
+      // Active order for the current session (displayed in confirmation modal)
+      const placedActiveOrder = {
         orderId: backendOrder.order_code,
         orderCode: backendOrder.order_code,
         roomName: backendOrder.room_name,
@@ -275,7 +562,32 @@ export default function FoodMenuScreen({ navigation, onBack }) {
         estimatedDeliveryMinutes: backendOrder.estimated_delivery_minutes || 30,
         createdAt: backendOrder.created_at,
         raw: backendOrder,
-      });
+      };
+
+      // Minimal receipt for privacy-preserving local storage and recent orders
+      const minimalReceipt = {
+        orderCode: backendOrder.order_code,
+        createdAt: backendOrder.created_at || new Date().toISOString(),
+        items: Array.isArray(backendOrder.items)
+          ? backendOrder.items.map((it) => ({
+              name: it.item_name,
+              quantity: it.quantity,
+              price: it.unit_price,
+            }))
+          : [],
+        subtotalLKR: backendOrder.subtotal,
+        serviceChargeLKR: backendOrder.service_charge,
+        totalLKR: backendOrder.total_amount,
+        status: backendOrder.status || 'Pending',
+        estimatedDeliveryMinutes: backendOrder.estimated_delivery_minutes || 30,
+      };
+
+      // 1. Immediately update UI state (Session Success)
+      setActiveOrder(placedActiveOrder);
+      setRecentOrders((prev) => [
+        minimalReceipt,
+        ...prev.filter((o) => o.orderCode !== minimalReceipt.orderCode),
+      ].slice(0, 10));
 
       // Clear cart and reset form only after confirmed success
       setCart([]);
@@ -287,13 +599,29 @@ export default function FoodMenuScreen({ navigation, onBack }) {
       // Close cart tray and open confirmation modal
       setCartVisible(false);
       setOrderConfirmedVisible(true);
+
+      // 2. Decoupled local persistence (isolated try-catch so storage errors NEVER fail the order)
+      try {
+        await saveOrderReceipt(minimalReceipt);
+      } catch (storageError) {
+        console.warn('[FoodMenuScreen] Notice: Failed to persist order receipt locally:', storageError.message || storageError);
+      }
+
+      // 3. If authenticated, refresh account orders in the background
+      if (tokenToSend) {
+        fetchAccountOrders(tokenToSend);
+      }
     } catch (error) {
       console.error('[FoodMenuScreen] Order creation failed:', error);
-      // Keep cart, room, and special instructions intact on failure
-      const errorMsg =
-        error.message ||
-        'Unable to place order. Please check your network connection and try again.';
-      setCheckoutError(errorMsg);
+      // Strict negative auth handling: 401 surfaces directly to user without silent anonymous downgrade
+      if (error?.status === 401) {
+        setCheckoutError('Authentication failed (HTTP 401). Your session may be invalid or expired. Please sign in again or sign out to order as an in-room guest.');
+      } else {
+        const errorMsg =
+          error.message ||
+          'Unable to place order. Please check your network connection and try again.';
+        setCheckoutError(errorMsg);
+      }
     } finally {
       setIsPlacingOrder(false);
     }
@@ -334,6 +662,34 @@ export default function FoodMenuScreen({ navigation, onBack }) {
           </View>
 
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            {/* Guest Authentication Button */}
+            <TouchableOpacity
+              style={[
+                styles.authHeaderButton,
+                authUser ? styles.authHeaderButtonActive : null,
+              ]}
+              onPress={() => {
+                if (authUser) {
+                  setOrdersViewTab('account');
+                  setMyOrdersVisible(true);
+                } else {
+                  setShowLoginModal(true);
+                }
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons
+                name={authUser ? 'person-circle' : 'person-outline'}
+                size={18}
+                color={authUser ? THEME.oceanBlue : THEME.darkSlate}
+              />
+              {authUser ? (
+                <Text style={styles.authHeaderName} numberOfLines={1}>
+                  {authUser.name ? authUser.name.split(' ')[0] : 'Guest'}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+
             {/* View Orders History */}
             <TouchableOpacity
               style={styles.ordersButton}
@@ -765,6 +1121,49 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                     </View>
                   ))}
 
+                  {/* Ordering Identity Banner: Authenticated Account vs In-Room Guest */}
+                  {authUser ? (
+                    <View style={styles.identityCardAuthenticated}>
+                      <View style={styles.identityLeft}>
+                        <Ionicons name="shield-checkmark" size={18} color="#0D9488" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.identityTitle}>
+                            Ordering as <Text style={{ fontWeight: '700' }}>{authUser.name}</Text>
+                          </Text>
+                          <Text style={styles.identitySubtitle} numberOfLines={1}>
+                            {authUser.email} · Linked to your guest account
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.identitySwitchBtn}
+                        onPress={handleLogout}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.identitySwitchText}>Sign Out</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.identityCardAnonymous}>
+                      <View style={styles.identityLeft}>
+                        <Ionicons name="person-outline" size={18} color={THEME.mutedSlate} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.identityTitle}>In-Room Guest Mode (Anonymous)</Text>
+                          <Text style={styles.identitySubtitle}>
+                            Billed to room folio. Sign in to link to your account.
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.identitySignInBtn}
+                        onPress={() => setShowLoginModal(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.identitySignInText}>Sign In</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                   {/* Delivery Location Selection (Strictly required Room 3, 4, or 5) */}
                   <View style={styles.deliveryBox}>
                     <View style={styles.deliveryHeaderRow}>
@@ -945,6 +1344,7 @@ export default function FoodMenuScreen({ navigation, onBack }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
+            {/* Modal Header */}
             <View style={styles.modalTopHeader}>
               <TouchableOpacity
                 style={styles.modalCloseButton}
@@ -953,80 +1353,540 @@ export default function FoodMenuScreen({ navigation, onBack }) {
                 <Ionicons name="close" size={20} color={THEME.darkSlate} />
               </TouchableOpacity>
               <Text style={styles.modalHeaderTitle}>My In-Room Orders</Text>
-              <View style={{ width: 36 }} />
+              <TouchableOpacity
+                style={[
+                  styles.modalRefreshButton,
+                  ((ordersViewTab === 'account' && isLoadingAccountOrders) ||
+                    (ordersViewTab === 'device' && (isRefreshingOrders || isRefreshingTracking))) && {
+                    opacity: 0.6,
+                  },
+                ]}
+                onPress={() => {
+                  if (ordersViewTab === 'account') {
+                    if (authToken) fetchAccountOrders(authToken);
+                  } else {
+                    handleRefreshBatchTracking();
+                  }
+                }}
+                disabled={
+                  ordersViewTab === 'account'
+                    ? isLoadingAccountOrders || !authToken
+                    : isRefreshingOrders || (!recentOrders.length && !activeOrder)
+                }
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={
+                    (ordersViewTab === 'account' && isLoadingAccountOrders) ||
+                    (ordersViewTab === 'device' && isRefreshingOrders)
+                      ? 'sync'
+                      : 'refresh'
+                  }
+                  size={16}
+                  color={THEME.oceanBlue}
+                />
+              </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 18 }}>
-              {activeOrder ? (
-                <View style={styles.activeOrderCard}>
-                  <View style={styles.orderHeaderRow}>
-                    <Text style={styles.orderCode}>{activeOrder.orderCode || activeOrder.orderId}</Text>
-                    <View style={styles.statusPill}>
-                      <Text style={styles.statusPillText}>{activeOrder.status || 'Pending'}</Text>
-                    </View>
+            {/* View Selection Tabs: Account Orders (Cloud) vs Device Receipts (Local) */}
+            <View style={styles.ordersTabRow}>
+              <TouchableOpacity
+                style={[styles.ordersTabItem, ordersViewTab === 'account' && styles.ordersTabItemActive]}
+                onPress={() => setOrdersViewTab('account')}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name="cloud-outline"
+                  size={14}
+                  color={ordersViewTab === 'account' ? THEME.oceanBlue : THEME.mutedSlate}
+                />
+                <Text style={[styles.ordersTabText, ordersViewTab === 'account' && styles.ordersTabTextActive]}>
+                  Account Orders
+                </Text>
+                {authToken && accountOrders.length > 0 && (
+                  <View style={[styles.ordersTabBadge, ordersViewTab === 'account' && styles.ordersTabBadgeActive]}>
+                    <Text style={[styles.ordersTabBadgeText, ordersViewTab === 'account' && styles.ordersTabBadgeTextActive]}>
+                      {accountOrders.length}
+                    </Text>
                   </View>
+                )}
+              </TouchableOpacity>
 
-                  <Text style={styles.orderItemsPreview}>
-                    {activeOrder.items && activeOrder.items.length > 0
-                      ? activeOrder.items
-                          .map(
-                            (it) =>
-                              `• ${it.name} x${it.quantity} (LKR ${(
-                                it.lineTotal || it.price * it.quantity
-                              ).toLocaleString()})`
-                          )
-                          .join('\n')
-                      : '• No items in active order'}
+              <TouchableOpacity
+                style={[styles.ordersTabItem, ordersViewTab === 'device' && styles.ordersTabItemActive]}
+                onPress={() => setOrdersViewTab('device')}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={14}
+                  color={ordersViewTab === 'device' ? THEME.oceanBlue : THEME.mutedSlate}
+                />
+                <Text style={[styles.ordersTabText, ordersViewTab === 'device' && styles.ordersTabTextActive]}>
+                  Device Receipts
+                </Text>
+                {recentOrders.length > 0 && (
+                  <View style={[styles.ordersTabBadge, ordersViewTab === 'device' && styles.ordersTabBadgeActive]}>
+                    <Text style={[styles.ordersTabBadgeText, ordersViewTab === 'device' && styles.ordersTabBadgeTextActive]}>
+                      {recentOrders.length}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Guest Authentication Status Banner */}
+            {authUser ? (
+              <View style={styles.ordersAuthStatusBar}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Ionicons name="shield-checkmark" size={14} color="#0D9488" />
+                  <Text style={styles.ordersAuthStatusText} numberOfLines={1}>
+                    Signed in as <Text style={{ fontWeight: '700' }}>{authUser.name}</Text>
                   </Text>
-
-                  {activeOrder.specialNote && activeOrder.specialNote.trim() ? (
-                    <Text style={styles.orderSpecialNote}>
-                      Note: {activeOrder.specialNote}
-                    </Text>
-                  ) : null}
-
-                  <View style={styles.orderFinancialSummary}>
-                    <View style={styles.orderFinanceRow}>
-                      <Text style={styles.orderFinanceLabel}>Subtotal</Text>
-                      <Text style={styles.orderFinanceVal}>
-                        LKR {activeOrder.subtotalLKR ? activeOrder.subtotalLKR.toLocaleString() : '0'}
-                      </Text>
-                    </View>
-                    <View style={styles.orderFinanceRow}>
-                      <Text style={styles.orderFinanceLabel}>Resort Service Charge (10%)</Text>
-                      <Text style={styles.orderFinanceVal}>
-                        LKR {activeOrder.serviceChargeLKR ? activeOrder.serviceChargeLKR.toLocaleString() : '0'}
-                      </Text>
-                    </View>
-                    <View style={[styles.orderFinanceRow, { marginTop: 4 }]}>
-                      <Text style={[styles.orderFinanceLabel, { fontWeight: '700', color: THEME.darkSlate }]}>
-                        Total Amount
-                      </Text>
-                      <Text style={[styles.orderFinanceVal, { fontWeight: '800', color: THEME.oceanBlue }]}>
-                        LKR {activeOrder.totalLKR ? activeOrder.totalLKR.toLocaleString() : '0'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.orderFooterRow}>
-                    <Text style={styles.orderDeliveringTo}>
-                      Destination: {activeOrder.roomName ? activeOrder.roomName : (activeOrder.roomNumber || 'Room not assigned')}
-                    </Text>
-                    <Text style={styles.orderPrice}>
-                      ETA: {activeOrder.estimatedDelivery || '~30 min'}
-                    </Text>
-                  </View>
                 </View>
+                <TouchableOpacity onPress={handleLogout} style={styles.ordersAuthStatusBtn}>
+                  <Text style={styles.ordersAuthStatusBtnText}>Sign Out</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.ordersGuestNoticeBar}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Ionicons name="sparkles" size={13} color={THEME.oceanBlue} />
+                  <Text style={styles.ordersGuestNoticeText} numberOfLines={1}>
+                    Sign in to sync your resort orders across devices
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowLoginModal(true)}
+                  style={styles.ordersGuestSignInBtn}
+                >
+                  <Text style={styles.ordersGuestSignInBtnText}>Sign In</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* TAB 1: AUTHENTICATED ACCOUNT ORDERS (Cloud API) */}
+            {ordersViewTab === 'account' ? (
+              !authToken ? (
+                /* Unauthenticated state prompt */
+                <ScrollView contentContainerStyle={{ padding: 20, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={styles.accountPromptCard}>
+                    <View style={styles.accountPromptIconWrap}>
+                      <Ionicons name="person-circle-outline" size={44} color={THEME.oceanBlue} />
+                    </View>
+                    <Text style={styles.accountPromptTitle}>Sign in to View Orders</Text>
+                    <Text style={styles.accountPromptSub}>
+                      Access your personal dining history, active room charges, and real-time kitchen tracking associated with your resort reservation.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.accountPromptBtn}
+                      onPress={() => setShowLoginModal(true)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="log-in-outline" size={16} color={THEME.white} />
+                      <Text style={styles.accountPromptBtnText}>Sign In to Guest Account</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               ) : (
-                <View style={styles.emptyOrdersBox}>
-                  <Ionicons name="receipt-outline" size={48} color={THEME.sandBeige} />
-                  <Text style={styles.emptyOrdersTitle}>No active in-room orders</Text>
-                  <Text style={styles.emptyOrdersSub}>
-                    Select culinary dishes from the menu to build your in-room dining order. Real-time kitchen tracking will appear here.
+                /* Authenticated state */
+                <ScrollView
+                  contentContainerStyle={{ padding: 18, paddingBottom: 40 }}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={isLoadingAccountOrders}
+                      onRefresh={() => fetchAccountOrders(authToken)}
+                      colors={[THEME.oceanBlue]}
+                      tintColor={THEME.oceanBlue}
+                    />
+                  }
+                >
+                  {isLoadingAccountOrders && (!accountOrders || accountOrders.length === 0) ? (
+                    <View style={styles.accountLoadingBox}>
+                      <ActivityIndicator size="small" color={THEME.oceanBlue} />
+                      <Text style={styles.accountLoadingText}>Retrieving your dining history...</Text>
+                    </View>
+                  ) : accountOrdersError ? (
+                    <View style={styles.accountErrorBox}>
+                      <Ionicons name="alert-circle-outline" size={32} color="#DC2626" />
+                      <Text style={styles.accountErrorTitle}>Unable to Load Orders</Text>
+                      <Text style={styles.accountErrorMsg}>{accountOrdersError}</Text>
+                      <TouchableOpacity
+                        style={styles.accountRetryBtn}
+                        onPress={() => fetchAccountOrders(authToken)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="refresh" size={14} color={THEME.white} />
+                        <Text style={styles.accountRetryBtnText}>Retry</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : accountOrders && accountOrders.length > 0 ? (
+                    accountOrders.map((order, idx) => {
+                      const statusCfg = STATUS_CONFIG[order.status] || STATUS_CONFIG['Pending'];
+                      const formattedDate = order.created_at
+                        ? new Date(order.created_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : 'Recent Order';
+
+                      return (
+                        <View key={order.order_code || order.id || idx} style={styles.orderHistoryCard}>
+                          {/* Card Header: Order Code & Status Badge */}
+                          <View style={styles.orderCardHeader}>
+                            <View style={styles.orderCodeBadge}>
+                              <Ionicons name="receipt-outline" size={13} color={THEME.darkSlate} />
+                              <Text style={styles.orderCodeText}>{order.order_code}</Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.statusBadge,
+                                { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.borderColor },
+                              ]}
+                            >
+                              <Ionicons name={statusCfg.icon} size={11} color={statusCfg.textColor} />
+                              <Text style={[styles.statusBadgeText, { color: statusCfg.textColor }]}>
+                                {statusCfg.label}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Date & Room Destination */}
+                          <View style={styles.orderMetaRow}>
+                            <Text style={styles.orderMetaDate}>{formattedDate}</Text>
+                            <View style={styles.roomBadgeSmall}>
+                              <Ionicons name="bed-outline" size={10} color={THEME.mutedSlate} />
+                              <Text style={styles.roomBadgeSmallText}>
+                                {order.room_name || `Room ${order.room_number}`}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Dishes Itemized Summary */}
+                          <View style={styles.orderItemsBox}>
+                            {Array.isArray(order.items) && order.items.length > 0 ? (
+                              order.items.map((it, itemIdx) => (
+                                <View key={itemIdx} style={styles.orderItemLine}>
+                                  <Text style={styles.orderItemName} numberOfLines={1}>
+                                    {it.item_name || it.name}
+                                  </Text>
+                                  <Text style={styles.orderItemQtyPrice}>
+                                    x{it.quantity} · LKR {((it.unit_price || it.price) * it.quantity).toLocaleString()}
+                                  </Text>
+                                </View>
+                              ))
+                            ) : (
+                              <Text style={styles.orderItemEmpty}>In-room dining dish details recorded</Text>
+                            )}
+                          </View>
+
+                          {/* Special kitchen note if present */}
+                          {order.special_note ? (
+                            <View style={styles.orderNoteBanner}>
+                              <Ionicons name="chatbubble-ellipses-outline" size={11} color={THEME.mutedSlate} />
+                              <Text style={styles.orderNoteBannerText} numberOfLines={2}>
+                                {order.special_note}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          {/* Financial Total */}
+                          <View style={styles.orderCardFooter}>
+                            <Text style={styles.orderTotalLabel}>Total Amount</Text>
+                            <Text style={styles.orderTotalValue}>
+                              LKR {order.total_amount ? Number(order.total_amount).toLocaleString() : '0'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })
+                  ) : (
+                    /* Empty order history state */
+                    <View style={styles.emptyOrdersBox}>
+                      <Ionicons name="receipt-outline" size={48} color={THEME.sandBeige} />
+                      <Text style={styles.emptyOrdersTitle}>No Account Orders Yet</Text>
+                      <Text style={styles.emptyOrdersSub}>
+                        You haven't placed any in-room dining orders with this account yet. Dishes ordered while signed in will appear here.
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+              )
+            ) : (
+              /* TAB 2: LOCAL DEVICE RECEIPTS (Privacy-preserving stored orders) */
+              <ScrollView
+                contentContainerStyle={{ padding: 18, paddingBottom: 40 }}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={isRefreshingOrders}
+                    onRefresh={handleRefreshBatchTracking}
+                    colors={[THEME.oceanBlue]}
+                    tintColor={THEME.oceanBlue}
+                  />
+                }
+              >
+                {ordersNotice ? (
+                  <View style={styles.ordersNoticeBanner}>
+                    <Ionicons name="information-circle-outline" size={13} color={THEME.oceanBlue} />
+                    <Text style={styles.ordersNoticeText}>{ordersNotice}</Text>
+                  </View>
+                ) : null}
+
+                {recentOrders && recentOrders.length > 0 ? (
+                  recentOrders.map((order, idx) => {
+                    const statusCfg = STATUS_CONFIG[order.status] || STATUS_CONFIG['Pending'];
+                    const formattedDate = order.createdAt
+                      ? new Date(order.createdAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'Recent Order';
+
+                    return (
+                      <View key={order.orderCode || idx} style={styles.orderHistoryCard}>
+                        {/* Card Header: Order Code & Status Badge */}
+                        <View style={styles.orderCardHeader}>
+                          <View style={styles.orderCodeBadge}>
+                            <Ionicons name="receipt-outline" size={13} color={THEME.darkSlate} />
+                            <Text style={styles.orderCodeText}>{order.orderCode}</Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.borderColor },
+                            ]}
+                          >
+                            <Ionicons name={statusCfg.icon} size={11} color={statusCfg.textColor} />
+                            <Text style={[styles.statusBadgeText, { color: statusCfg.textColor }]}>
+                              {statusCfg.label}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Date & Delivery Progress ETA */}
+                        <View style={styles.orderMetaRow}>
+                          <Text style={styles.orderMetaDate}>{formattedDate}</Text>
+                          {order.status !== 'Delivered' && order.status !== 'Cancelled' ? (
+                            <View style={styles.etaPill}>
+                              <Ionicons name="time-outline" size={10} color={THEME.oceanBlue} />
+                              <Text style={styles.etaPillText}>
+                                ETA: ~{order.estimatedDeliveryMinutes || 30} min
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {/* Dishes Itemized Summary */}
+                        <View style={styles.orderItemsBox}>
+                          {Array.isArray(order.items) && order.items.length > 0 ? (
+                            order.items.map((it, itemIdx) => (
+                              <View key={itemIdx} style={styles.orderItemLine}>
+                                <Text style={styles.orderItemName} numberOfLines={1}>
+                                  {it.name}
+                                </Text>
+                                <Text style={styles.orderItemQtyPrice}>
+                                  x{it.quantity} · LKR {(it.price * it.quantity).toLocaleString()}
+                                </Text>
+                              </View>
+                            ))
+                          ) : (
+                            <Text style={styles.orderItemEmpty}>In-room dining dish details recorded</Text>
+                          )}
+                        </View>
+
+                        {/* Financial Total */}
+                        <View style={styles.orderCardFooter}>
+                          <Text style={styles.orderTotalLabel}>Total Amount</Text>
+                          <Text style={styles.orderTotalValue}>
+                            LKR {order.totalLKR ? Number(order.totalLKR).toLocaleString() : '0'}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                ) : activeOrder ? (
+                  /* Fallback to single activeOrder if recentOrders not yet hydrated */
+                  <View style={styles.activeOrderCard}>
+                    <View style={styles.orderHeaderRow}>
+                      <Text style={styles.orderCode}>{activeOrder.orderCode || activeOrder.orderId}</Text>
+                      <View style={styles.statusPill}>
+                        <Text style={styles.statusPillText}>{activeOrder.status || 'Pending'}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.trackingBarRow}>
+                      <TouchableOpacity
+                        style={[styles.trackingRefreshBtn, isRefreshingTracking && { opacity: 0.6 }]}
+                        onPress={handleRefreshTracking}
+                        disabled={isRefreshingTracking}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name={isRefreshingTracking ? 'sync' : 'refresh'}
+                          size={12}
+                          color={THEME.oceanBlue}
+                        />
+                        <Text style={styles.trackingRefreshText}>
+                          {isRefreshingTracking ? 'Checking...' : 'Live Kitchen Status'}
+                        </Text>
+                      </TouchableOpacity>
+                      {trackingNotice ? (
+                        <Text style={styles.trackingNoticeText}>{trackingNotice}</Text>
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.orderItemsPreview}>
+                      {activeOrder.items && activeOrder.items.length > 0
+                        ? activeOrder.items
+                            .map(
+                              (it) =>
+                                `• ${it.name} x${it.quantity} (LKR ${(
+                                  it.lineTotal || it.price * it.quantity
+                                ).toLocaleString()})`
+                            )
+                            .join('\n')
+                        : '• No items in active order'}
+                    </Text>
+
+                    <View style={styles.orderFinancialSummary}>
+                      <View style={styles.orderFinanceRow}>
+                        <Text style={styles.orderFinanceLabel}>Total Amount</Text>
+                        <Text style={[styles.orderFinanceVal, { fontWeight: '800', color: THEME.oceanBlue }]}>
+                          LKR {activeOrder.totalLKR ? activeOrder.totalLKR.toLocaleString() : '0'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.emptyOrdersBox}>
+                    <Ionicons name="receipt-outline" size={48} color={THEME.sandBeige} />
+                    <Text style={styles.emptyOrdersTitle}>No in-room dining orders yet</Text>
+                    <Text style={styles.emptyOrdersSub}>
+                      Select culinary dishes from the menu to build your in-room dining order. Real-time kitchen progress and recent receipts will appear here.
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.deviceReceiptsFootnote}>
+                  <Ionicons name="shield-outline" size={12} color={THEME.mutedSlate} />
+                  <Text style={styles.deviceReceiptsFootnoteText}>
+                    Device receipts are stored locally on this device and remain available even after logging out.
                   </Text>
                 </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 9. GUEST SIGN IN MODAL */}
+      <Modal
+        visible={showLoginModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => {
+          if (!isLoggingIn) setShowLoginModal(false);
+        }}
+      >
+        <View style={styles.loginModalOverlay}>
+          <View style={styles.loginModalCard}>
+            <View style={styles.loginModalHeader}>
+              <View style={styles.loginBrandBadge}>
+                <Ionicons name="sparkles" size={12} color={THEME.oceanBlue} />
+                <Text style={styles.loginBrandTag}>TENZAL GUEST ACCESS</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!isLoggingIn) setShowLoginModal(false);
+                }}
+                disabled={isLoggingIn}
+                style={styles.loginCloseBtn}
+              >
+                <Ionicons name="close" size={18} color={THEME.darkSlate} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.loginModalTitle}>Guest Sign In</Text>
+            <Text style={styles.loginModalSub}>
+              Sign in to associate in-room dining orders with your resort reservation and access full dining history.
+            </Text>
+
+            {loginError && (
+              <View style={styles.loginErrorBanner}>
+                <Ionicons name="alert-circle" size={15} color="#DC2626" />
+                <Text style={styles.loginErrorText}>{loginError}</Text>
+              </View>
+            )}
+
+            <View style={styles.loginInputWrap}>
+              <Text style={styles.loginInputLabel}>Email Address</Text>
+              <TextInput
+                style={styles.loginInput}
+                placeholder="e.g. amelia@example.com"
+                placeholderTextColor={THEME.mutedSlate}
+                value={loginEmail}
+                onChangeText={setLoginEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                editable={!isLoggingIn}
+              />
+            </View>
+
+            <View style={styles.loginInputWrap}>
+              <Text style={styles.loginInputLabel}>Password</Text>
+              <TextInput
+                style={styles.loginInput}
+                placeholder="••••••••"
+                placeholderTextColor={THEME.mutedSlate}
+                value={loginPassword}
+                onChangeText={setLoginPassword}
+                secureTextEntry
+                editable={!isLoggingIn}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginSubmitBtn, isLoggingIn && { opacity: 0.7 }]}
+              onPress={() => handleLoginSubmit()}
+              disabled={isLoggingIn}
+              activeOpacity={0.85}
+            >
+              {isLoggingIn ? (
+                <ActivityIndicator size="small" color={THEME.white} />
+              ) : (
+                <Text style={styles.loginSubmitBtnText}>Sign In</Text>
               )}
-            </ScrollView>
+            </TouchableOpacity>
+
+            {/* Development-Only Demo Shortcut (Guarded by __DEV__) */}
+            {Boolean(typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production') && (
+              <TouchableOpacity
+                style={styles.loginDemoBtn}
+                onPress={() =>
+                  handleLoginSubmit({
+                    email: 'amelia@example.com',
+                    password: 'Password123!',
+                  })
+                }
+                disabled={isLoggingIn}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="flash" size={14} color={THEME.oceanBlue} />
+                <Text style={styles.loginDemoBtnText}>Demo Guest Sign In (Amelia Hart)</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.loginCancelBtn}
+              onPress={() => setShowLoginModal(false)}
+              disabled={isLoggingIn}
+            >
+              <Text style={styles.loginCancelBtnText}>Continue as In-Room Guest</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1969,6 +2829,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  trackingBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  trackingRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: THEME.skyBlue,
+  },
+  trackingRefreshText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+  },
+  trackingNoticeText: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    color: THEME.mutedSlate,
+  },
   orderCode: {
     fontSize: 13,
     fontWeight: '800',
@@ -2014,6 +2899,145 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: THEME.darkSlate,
+  },
+  modalRefreshButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: THEME.skyBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ordersNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: THEME.skyBlue,
+    borderRadius: 8,
+    marginHorizontal: 18,
+    marginTop: 8,
+  },
+  ordersNoticeText: {
+    fontSize: 11,
+    color: THEME.darkSlate,
+    fontWeight: '500',
+  },
+  orderHistoryCard: {
+    backgroundColor: THEME.white,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: THEME.sandBeige,
+    shadowColor: THEME.darkSlate,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  orderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  orderCodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  orderCodeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.darkSlate,
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  orderMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F6',
+  },
+  orderMetaDate: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '500',
+  },
+  etaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: THEME.skyBlue,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  etaPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+  },
+  orderItemsBox: {
+    marginBottom: 8,
+  },
+  orderItemLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  orderItemName: {
+    fontSize: 12,
+    color: THEME.darkSlate,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  orderItemQtyPrice: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '500',
+  },
+  orderItemEmpty: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontStyle: 'italic',
+  },
+  orderCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F6',
+  },
+  orderTotalLabel: {
+    fontSize: 11,
+    color: THEME.mutedSlate,
+    fontWeight: '600',
+  },
+  orderTotalValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.oceanBlue,
   },
   bottomTab: {
     flexDirection: 'row',
@@ -2203,5 +3227,470 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
     lineHeight: 18,
+  },
+  authHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: THEME.white,
+    borderWidth: 1,
+    borderColor: THEME.sandBeige,
+    gap: 4,
+  },
+  authHeaderButtonActive: {
+    backgroundColor: THEME.skyBlue,
+    borderColor: '#B6DDE9',
+  },
+  authHeaderName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.oceanBlue,
+    maxWidth: 60,
+  },
+  identityCardAuthenticated: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  identityCardAnonymous: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  identityLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  identityTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.darkSlate,
+  },
+  identitySubtitle: {
+    fontSize: 10,
+    color: THEME.mutedSlate,
+    marginTop: 1,
+  },
+  identitySwitchBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+  },
+  identitySwitchText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  identitySignInBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: THEME.oceanBlue,
+  },
+  identitySignInText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.white,
+  },
+  ordersTabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 8,
+    backgroundColor: THEME.creamWhite,
+  },
+  ordersTabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: THEME.white,
+    borderWidth: 1,
+    borderColor: THEME.sandBeige,
+    gap: 6,
+  },
+  ordersTabItemActive: {
+    backgroundColor: THEME.skyBlue,
+    borderColor: '#B6DDE9',
+  },
+  ordersTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.mutedSlate,
+  },
+  ordersTabTextActive: {
+    color: THEME.oceanBlue,
+    fontWeight: '700',
+  },
+  ordersTabBadge: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  ordersTabBadgeActive: {
+    backgroundColor: THEME.oceanBlue,
+  },
+  ordersTabBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.mutedSlate,
+  },
+  ordersTabBadgeTextActive: {
+    color: THEME.white,
+  },
+  ordersAuthStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 18,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    gap: 8,
+  },
+  ordersAuthStatusText: {
+    fontSize: 11,
+    color: '#166534',
+    flex: 1,
+  },
+  ordersAuthStatusBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 6,
+  },
+  ordersAuthStatusBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  ordersGuestNoticeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 18,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: THEME.skyBlue,
+    borderWidth: 1,
+    borderColor: '#B6DDE9',
+    borderRadius: 8,
+    gap: 8,
+  },
+  ordersGuestNoticeText: {
+    fontSize: 11,
+    color: THEME.oceanBlue,
+    flex: 1,
+  },
+  ordersGuestSignInBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    backgroundColor: THEME.oceanBlue,
+    borderRadius: 6,
+  },
+  ordersGuestSignInBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.white,
+  },
+  accountPromptCard: {
+    alignItems: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    gap: 12,
+    maxWidth: 320,
+  },
+  accountPromptIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: THEME.skyBlue,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  accountPromptTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: THEME.darkSlate,
+    textAlign: 'center',
+  },
+  accountPromptSub: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  accountPromptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.oceanBlue,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    gap: 8,
+    marginTop: 6,
+  },
+  accountPromptBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.white,
+  },
+  accountLoadingBox: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  accountLoadingText: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+  },
+  accountErrorBox: {
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  accountErrorTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  accountErrorMsg: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  accountRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.oceanBlue,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    gap: 6,
+    marginTop: 6,
+  },
+  accountRetryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.white,
+  },
+  roomBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  roomBadgeSmallText: {
+    fontSize: 10,
+    color: THEME.mutedSlate,
+    fontWeight: '600',
+  },
+  orderNoteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  orderNoteBannerText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: '#92400E',
+    flex: 1,
+  },
+  deviceReceiptsFootnote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  deviceReceiptsFootnoteText: {
+    fontSize: 10,
+    color: THEME.mutedSlate,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  loginModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loginModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: THEME.white,
+    borderRadius: 20,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  loginModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  loginBrandBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: THEME.skyBlue,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  loginBrandTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: THEME.oceanBlue,
+  },
+  loginCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loginModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: THEME.darkSlate,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  loginModalSub: {
+    fontSize: 12,
+    color: THEME.mutedSlate,
+    marginTop: 4,
+    marginBottom: 14,
+    lineHeight: 17,
+  },
+  loginErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+    gap: 6,
+  },
+  loginErrorText: {
+    fontSize: 11,
+    color: '#991B1B',
+    fontWeight: '600',
+    flex: 1,
+  },
+  loginInputWrap: {
+    marginBottom: 12,
+  },
+  loginInputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.darkSlate,
+    marginBottom: 4,
+  },
+  loginInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: THEME.darkSlate,
+  },
+  loginSubmitBtn: {
+    backgroundColor: THEME.oceanBlue,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  loginSubmitBtnText: {
+    color: THEME.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  loginDemoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.skyBlue,
+    borderWidth: 1,
+    borderColor: '#B6DDE9',
+    borderRadius: 12,
+    paddingVertical: 10,
+    gap: 6,
+    marginTop: 8,
+  },
+  loginDemoBtnText: {
+    color: THEME.oceanBlue,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  loginCancelBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  loginCancelBtnText: {
+    color: THEME.mutedSlate,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

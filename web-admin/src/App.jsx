@@ -1,123 +1,158 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import { ToastProvider } from './components/common/Toast';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import ProtectedRoute from './components/common/ProtectedRoute';
+import LoginPage from './pages/LoginPage';
 import OverviewPage from './pages/OverviewPage';
 import RoomsPage from './pages/RoomsPage';
 import BookingsPage from './pages/BookingsPage';
+import FoodOrdersPage from './pages/FoodOrdersPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+
+function PublicLoginRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+  const from = location.state?.from?.pathname || '/';
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f8f6]">
+        <div className="w-10 h-10 rounded-2xl border-2 border-[#245d6a]/20 border-t-[#245d6a] animate-spin" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={from} replace />;
+  }
+
+  return <LoginPage />;
+}
 
 function App() {
   return (
     <BrowserRouter>
-      <ToastProvider>
-        <Layout>
+      <AuthProvider>
+        <ToastProvider>
           <Routes>
-            {/* Overview / Dashboard */}
-            <Route path="/" element={<OverviewPage />} />
-            <Route path="/overview" element={<Navigate to="/" replace />} />
+            {/* Public Login Route */}
+            <Route path="/login" element={<PublicLoginRoute />} />
 
-            {/* Room Booking Module Assigned Routes (Student ID: 22CIS0276) */}
-            <Route path="/rooms" element={<RoomsPage />} />
-            <Route path="/bookings" element={<BookingsPage />} />
+            {/* Protected Admin Routes */}
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'staff']}>
+                  <Layout>
+                    <Routes>
+                      {/* Overview / Dashboard */}
+                      <Route path="/" element={<OverviewPage />} />
+                      <Route path="/overview" element={<Navigate to="/" replace />} />
 
-            {/* Team Members' Modules (Clean Prototypes) */}
-            <Route
-              path="/food-menu"
-              element={
-                <PlaceholderPage
-                  title="Food Menu Management"
-                  subtitle="Manage dishes, prices, availability and daily specials"
-                />
-              }
-            />
-            <Route
-              path="/food-orders"
-              element={
-                <PlaceholderPage
-                  title="Food Orders"
-                  subtitle="Live order management and kitchen updates"
-                />
-              }
-            />
-            <Route
-              path="/gallery"
-              element={
-                <PlaceholderPage
-                  title="Gallery Management"
-                  subtitle="Manage resort photo albums and luxury assets"
-                />
-              }
-            />
-            <Route
-              path="/destinations"
-              element={
-                <PlaceholderPage
-                  title="Destinations"
-                  subtitle="Manage places used by Explore and Plan My Day"
-                />
-              }
-            />
-            <Route
-              path="/plan-my-day"
-              element={
-                <PlaceholderPage
-                  title="Plan My Day Data"
-                  subtitle="Curated guest day plans, activities and itineraries"
-                />
-              }
-            />
-            <Route
-              path="/resort-content"
-              element={
-                <PlaceholderPage
-                  title="Resort Content"
-                  subtitle="Editorial copy, resort story, amenities and policies"
-                />
-              }
-            />
-            <Route
-              path="/inquiries"
-              element={
-                <PlaceholderPage
-                  title="Customer Inquiries"
-                  subtitle="Review and respond to guest pre-booking inquiries"
-                />
-              }
-            />
-            <Route
-              path="/customers"
-              element={
-                <PlaceholderPage
-                  title="Customers"
-                  subtitle="Guest profiles, loyalty data, and preferences"
-                />
-              }
-            />
-            <Route
-              path="/staff-roles"
-              element={
-                <PlaceholderPage
-                  title="Staff & Roles"
-                  subtitle="Control access for authorized resort staff"
-                />
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <PlaceholderPage
-                  title="Settings"
-                  subtitle="Configure resort preferences, currencies, and notifications"
-                />
-              }
-            />
+                      {/* Room Booking Module Assigned Routes (Student ID: 22CIS0276) */}
+                      <Route path="/rooms" element={<RoomsPage />} />
+                      <Route path="/bookings" element={<BookingsPage />} />
 
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+                      {/* Team Members' Modules (Clean Prototypes) */}
+                      <Route
+                        path="/food-menu"
+                        element={
+                          <PlaceholderPage
+                            title="Food Menu Management"
+                            subtitle="Manage dishes, prices, availability and daily specials"
+                          />
+                        }
+                      />
+                      {/* Food Ordering Module (Student ID: 22CIS0328) */}
+                      <Route
+                        path="/food-orders"
+                        element={<FoodOrdersPage />}
+                      />
+                      <Route
+                        path="/gallery"
+                        element={
+                          <PlaceholderPage
+                            title="Gallery Management"
+                            subtitle="Manage resort photo albums and luxury assets"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/destinations"
+                        element={
+                          <PlaceholderPage
+                            title="Destinations"
+                            subtitle="Manage places used by Explore and Plan My Day"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/plan-my-day"
+                        element={
+                          <PlaceholderPage
+                            title="Plan My Day Data"
+                            subtitle="Curated guest day plans, activities and itineraries"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/resort-content"
+                        element={
+                          <PlaceholderPage
+                            title="Resort Content"
+                            subtitle="Editorial copy, resort story, amenities and policies"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/inquiries"
+                        element={
+                          <PlaceholderPage
+                            title="Customer Inquiries"
+                            subtitle="Review and respond to guest pre-booking inquiries"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/customers"
+                        element={
+                          <PlaceholderPage
+                            title="Customers"
+                            subtitle="Guest profiles, loyalty data, and preferences"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/staff-roles"
+                        element={
+                          <PlaceholderPage
+                            title="Staff & Roles"
+                            subtitle="Control access for authorized resort staff"
+                          />
+                        }
+                      />
+                      <Route
+                        path="/settings"
+                        element={
+                          <PlaceholderPage
+                            title="Settings"
+                            subtitle="Configure resort preferences, currencies, and notifications"
+                          />
+                        }
+                      />
+
+                      {/* Fallback */}
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
-        </Layout>
-      </ToastProvider>
+        </ToastProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
