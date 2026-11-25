@@ -1,6 +1,16 @@
 {
   "name": "tenzal-luxury-resort-backend",
   "version": "1.0.0",
+  "description": "Backend API for TENZAL Luxury Resort",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "start:food": "node src/server.js",
+    "dev:food": "node --watch src/server.js"
+  },
+  "keywords": ["resort", "booking", "hotel", "luxury", "food-ordering"],
+  "author": "",
   "description": "Unified Backend API for TENZAL Luxury Resort (User Management, Room Booking, Food Ordering, About Us)",
   "main": "server.js",
   "scripts": {
