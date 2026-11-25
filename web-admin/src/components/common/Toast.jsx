@@ -6,16 +6,23 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback((toast) => {
+  const addToast = useCallback((toastOrMessage, type = 'success', subtitle = '') => {
     const id = Date.now() + Math.random().toString(36).substring(2, 7);
     const newToast =
-      typeof toast === 'string'
-        ? { id, type: 'info', message: toast, duration: 4000 }
+      typeof toastOrMessage === 'object' && toastOrMessage !== null
+        ? {
+            id,
+            type: toastOrMessage.type || 'info',
+            message: toastOrMessage.message || '',
+            subtitle: toastOrMessage.subtitle || '',
+            duration: toastOrMessage.duration !== undefined ? toastOrMessage.duration : 4000,
+          }
         : {
             id,
-            type: toast.type || 'info',
-            message: toast.message || '',
-            duration: toast.duration !== undefined ? toast.duration : 4000,
+            type: type || 'info',
+            message: toastOrMessage || '',
+            subtitle: subtitle || '',
+            duration: 4500,
           };
 
     setToasts((prev) => [...prev, newToast]);
@@ -31,18 +38,24 @@ export function ToastProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = {
+  const toastApi = {
     show: addToast,
-    success: (message, duration) => addToast({ type: 'success', message, duration }),
-    error: (message, duration) => addToast({ type: 'error', message, duration }),
-    warning: (message, duration) => addToast({ type: 'warning', message, duration }),
-    info: (message, duration) => addToast({ type: 'info', message, duration }),
+    showToast: addToast,
+    addToast,
+    success: (message, duration, subtitle = '') =>
+      addToast({ type: 'success', message, duration, subtitle }),
+    error: (message, duration, subtitle = '') =>
+      addToast({ type: 'error', message, duration, subtitle }),
+    warning: (message, duration, subtitle = '') =>
+      addToast({ type: 'warning', message, duration, subtitle }),
+    info: (message, duration, subtitle = '') =>
+      addToast({ type: 'info', message, duration, subtitle }),
   };
 
   return (
-    <ToastContext.Provider value={toast}>
+    <ToastContext.Provider value={toastApi}>
       {children}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -56,12 +69,23 @@ export function ToastProvider({ children }) {
                 : 'bg-[#14333b] text-gray-100 border-[#1e444e]'
             }`}
           >
-            {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />}
-            {t.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />}
-            {t.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />}
-            {t.type === 'info' && <Info className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />}
+            {t.type === 'success' && (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            )}
+            {t.type === 'error' && (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            )}
+            {t.type === 'warning' && (
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            )}
+            {t.type === 'info' && (
+              <Info className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
+            )}
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-white">{t.message}</p>
+              <p className="font-medium text-white leading-snug">{t.message}</p>
+              {t.subtitle && (
+                <p className="text-xs text-white/80 mt-0.5 leading-relaxed">{t.subtitle}</p>
+              )}
             </div>
             <button
               onClick={() => removeToast(t.id)}
@@ -82,6 +106,8 @@ export function useToast() {
   if (!context) {
     return {
       show: () => {},
+      showToast: () => {},
+      addToast: () => {},
       success: () => {},
       error: () => {},
       warning: () => {},
