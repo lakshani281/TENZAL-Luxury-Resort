@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   LayoutGrid,
   BedDouble,
@@ -19,6 +20,20 @@ import {
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
+  const initials = (user?.name || 'NP')
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   const mainNav = [
     { name: 'Overview', path: '/', icon: LayoutGrid, activeMatch: (p) => p === '/' || p === '/overview' },
@@ -162,17 +177,19 @@ export default function Sidebar() {
       <div className="p-3 border-t border-[#1e444e] flex items-center justify-between bg-[#112a31]">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-9 h-9 rounded-full bg-[#d8b5a0] text-[#4a2e1d] font-semibold flex items-center justify-center text-xs shrink-0 shadow-xs">
-            NP
+            {initials}
           </div>
           <div className="truncate">
-            <p className="text-xs font-semibold text-white truncate">Nadeesha</p>
-            <p className="text-[10px] text-teal-200/70 truncate">Administrator</p>
+            <p className="text-xs font-semibold text-white truncate">{user?.name || 'Staff User'}</p>
+            <p className="text-[10px] text-teal-200/70 truncate capitalize">{user?.role || 'Administrator'}</p>
           </div>
         </div>
         <button
           type="button"
+          onClick={handleLogout}
           className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
           title="Sign out"
+          aria-label="Sign out"
         >
           <LogOut className="w-4 h-4" />
         </button>
