@@ -38,10 +38,24 @@ const getBookingStats = async (_req, res, next) => {
 /**
  * GET /api/bookings/:id
  * Get a single booking by ID (with room info).
+ * Admin and staff have unrestricted access; guests may only access their own booking (matched by verified JWT email).
  */
 const getBookingById = async (req, res, next) => {
   try {
     const booking = await bookingService.getBookingById(req.params.id);
+    const userRole = (req.user?.role || '').toLowerCase();
+
+    if (!['admin', 'staff'].includes(userRole)) {
+      const bookingEmail = (booking.guest_email || '').trim().toLowerCase();
+      const userEmail = (req.user?.email || '').trim().toLowerCase();
+
+      if (!bookingEmail || !userEmail || bookingEmail !== userEmail) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You do not have permission to view this booking.',
+        });
+      }
+    }
 
     res.json({
       success: true,
@@ -55,10 +69,23 @@ const getBookingById = async (req, res, next) => {
 /**
  * POST /api/bookings
  * Create a new booking.
+ * Guests: bound to verified JWT email and forced to 'pending' status.
+ * Admin/Staff: may create bookings on behalf of any guest.
  */
 const createBooking = async (req, res, next) => {
   try {
-    const booking = await bookingService.createBooking(req.body);
+    const userRole = (req.user?.role || '').toLowerCase();
+    let payload = { ...req.body };
+
+    if (userRole === 'guest') {
+      payload = {
+        ...payload,
+        guest_email: req.user.email,
+        status: 'pending',
+      };
+    }
+
+    const booking = await bookingService.createBooking(payload);
 
     res.status(201).json({
       success: true,
