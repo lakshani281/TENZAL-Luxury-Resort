@@ -11,12 +11,28 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PlanMyDayHomeScreen({ navigation, onNavigateToForm }) {
+export default function PlanMyDayHomeScreen({ navigation, onNavigateToForm, onBack, onTabPress }) {
   const handlePressCreatePlan = () => {
     if (onNavigateToForm) {
       onNavigateToForm();
     } else if (navigation && navigation.navigate) {
       navigation.navigate('PlanMyDayForm');
+    }
+  };
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (navigation && navigation.goBack) {
+      navigation.goBack();
+    }
+  };
+
+  const handleTab = (tabName) => {
+    if (onTabPress) {
+      onTabPress(tabName);
+    } else if (navigation && navigation.navigate) {
+      navigation.navigate(tabName);
     }
   };
 
@@ -34,7 +50,7 @@ export default function PlanMyDayHomeScreen({ navigation, onNavigateToForm }) {
           <SafeAreaView style={styles.safeArea}>
             {/* Top Back Button */}
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#000" />
               </TouchableOpacity>
             </View>
@@ -59,23 +75,23 @@ export default function PlanMyDayHomeScreen({ navigation, onNavigateToForm }) {
 
             {/* Bottom Navigation Bar */}
             <View style={styles.bottomTab}>
-              <TouchableOpacity style={styles.tabItem}>
+              <TouchableOpacity style={styles.tabItem} onPress={() => handleTab('Home')}>
                 <Ionicons name="home-outline" size={20} color="#718096" />
                 <Text style={styles.tabLabel}>Home</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.tabItem}>
+              <TouchableOpacity style={styles.tabItem} onPress={() => handleTab('Rooms')}>
                 <Ionicons name="bed-outline" size={20} color="#718096" />
                 <Text style={styles.tabLabel}>Rooms</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.tabItem}>
+              <TouchableOpacity style={styles.tabItem} onPress={() => handleTab('Explore')}>
                 <Ionicons name="compass-outline" size={20} color="#718096" />
                 <Text style={styles.tabLabel}>Explore</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.tabItem}>
+              <TouchableOpacity style={styles.tabItem} onPress={() => handleTab('Plan')}>
                 <Ionicons name="compass" size={20} color="#1A365D" />
                 <Text style={[styles.tabLabel, styles.activeTabLabel]}>Plan</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.tabItem}>
+              <TouchableOpacity style={styles.tabItem} onPress={() => handleTab('Profile')}>
                 <Ionicons name="person-outline" size={20} color="#718096" />
                 <Text style={styles.tabLabel}>Profile</Text>
               </TouchableOpacity>

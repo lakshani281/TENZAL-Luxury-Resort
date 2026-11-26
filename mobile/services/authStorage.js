@@ -226,6 +226,64 @@ export async function login({ email, password }) {
 }
 
 /**
+ * Register a new guest account with the backend User Management API.
+ * POST /api/auth/register
+ *
+ * @param {Object} registrationData
+ * @param {string} registrationData.name
+ * @param {string} registrationData.email
+ * @param {string} registrationData.password
+ * @param {string} [registrationData.phone]
+ * @returns {Promise<{ token: string, user: Object }>}
+ */
+export async function register({ name, email, password, phone }) {
+  const origin = getBackendOrigin();
+  const url = `${origin}/api/auth/register`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      email,
+      password,
+      ...(phone ? { phone } : {}),
+    }),
+  });
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    // Non-JSON response
+  }
+
+  if (!response.ok) {
+    const validationMsg = Array.isArray(body?.errors) && body.errors.length > 0
+      ? body.errors.join(' ')
+      : null;
+    const msg = validationMsg || body?.message || `Registration failed (HTTP ${response.status})`;
+    const error = new Error(msg);
+    error.status = response.status;
+    error.data = body;
+    throw error;
+  }
+
+  const token = body?.data?.token;
+  const user = body?.data?.user;
+
+  if (!token) {
+    throw new Error('Registration succeeded but token was not returned.');
+  }
+
+  await setAuthSession(token, user);
+  return { token, user };
+}
+
+/**
  * Logout the active guest session.
  * Notifies backend if possible and clears session tokens locally.
  * Preserves all local order receipts.
@@ -258,5 +316,6 @@ export default {
   clearAuthSession,
   isTokenExpired,
   login,
+  register,
   logout,
 };

@@ -10,6 +10,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -18,6 +19,8 @@ export default function CreateAccountScreen({
   onSignUp,
   onSignInLink,
   onBack,
+  isLoading = false,
+  apiError = '',
 }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -26,16 +29,21 @@ export default function CreateAccountScreen({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSignUpPress = () => {
+  const busy = isLoading || submitting;
+  const displayError = errorMessage || apiError;
+
+  const handleSignUpPress = async () => {
+    if (busy) return;
     setErrorMessage('');
 
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
     const trimmedPhone = phoneNumber.trim();
 
-    if (!trimmedName) {
-      setErrorMessage('Please enter your full name.');
+    if (!trimmedName || trimmedName.length < 2) {
+      setErrorMessage('Please enter your full name (at least 2 characters).');
       return;
     }
 
@@ -65,18 +73,30 @@ export default function CreateAccountScreen({
       return;
     }
 
+    if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      setErrorMessage('Password must include at least one uppercase letter and one number.');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setErrorMessage('Passwords do not match.');
       return;
     }
 
     if (onSignUp) {
-      onSignUp({
-        fullName: trimmedName,
-        email: trimmedEmail,
-        phoneNumber: trimmedPhone,
-        password,
-      });
+      try {
+        setSubmitting(true);
+        await onSignUp({
+          fullName: trimmedName,
+          email: trimmedEmail,
+          phoneNumber: trimmedPhone,
+          password,
+        });
+      } catch (err) {
+        setErrorMessage(err?.message || 'Unable to create account. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
     } else if (navigation && navigation.navigate) {
       navigation.navigate('Summary');
     }
@@ -96,6 +116,16 @@ export default function CreateAccountScreen({
         >
           {/* Top Brand Header */}
           <View style={styles.brandHeader}>
+            {onBack ? (
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={onBack}
+                activeOpacity={0.7}
+                disabled={busy}
+              >
+                <Ionicons name="arrow-back" size={18} color="#183642" />
+              </TouchableOpacity>
+            ) : null}
             <Text style={styles.brandText}>TENZAL</Text>
           </View>
 
@@ -109,10 +139,10 @@ export default function CreateAccountScreen({
           {/* Form Inputs */}
           <View style={styles.formContainer}>
             {/* Error Banner */}
-            {errorMessage ? (
+            {displayError ? (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle-outline" size={16} color="#C53030" />
-                <Text style={styles.errorText}>{errorMessage}</Text>
+                <Text style={styles.errorText}>{displayError}</Text>
               </View>
             ) : null}
 
@@ -218,11 +248,16 @@ export default function CreateAccountScreen({
 
             {/* Sign Up Button */}
             <TouchableOpacity
-              style={styles.signUpButton}
+              style={[styles.signUpButton, busy && { opacity: 0.7 }]}
               activeOpacity={0.85}
               onPress={handleSignUpPress}
+              disabled={busy}
             >
-              <Text style={styles.signUpButtonText}>Sign up</Text>
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.signUpButtonText}>Sign up</Text>
+              )}
             </TouchableOpacity>
 
             {/* Bottom Sign In Link */}
@@ -251,7 +286,20 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 34,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E2DC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   brandText: {
     fontSize: 16,
