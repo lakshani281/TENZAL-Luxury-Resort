@@ -4,6 +4,9 @@ import { StatusBar } from 'expo-status-bar';
 
 import HomeScreen from './screens/HomeScreen';
 import RoomsScreen from './screens/RoomsScreen';
+import RoomDetailsScreen from './screens/RoomDetailsScreen';
+import RoomBookingScreen from './screens/RoomBookingScreen';
+import BookingConfirmationScreen from './screens/BookingConfirmationScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import DestinationListScreen from './screens/DestinationListScreen';
 import DestinationDetailsScreen from './screens/DestinationDetailsScreen';
@@ -35,6 +38,8 @@ const MAIN_TABS = new Set(['Home', 'Rooms', 'Explore', 'Plan', 'Profile']);
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
   const [selectedDestination, setSelectedDestination] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authReturnScreen, setAuthReturnScreen] = useState('Profile');
@@ -142,12 +147,59 @@ export default function App() {
       );
     }
 
-    // Rooms Flow
+    // Room Booking Flow
+    if (currentScreen === 'BookingConfirmation') {
+      return (
+        <BookingConfirmationScreen
+          booking={confirmedBooking}
+          onReturnHome={() => navigateTo('Home')}
+          onBrowseRooms={() => navigateTo('Rooms')}
+        />
+      );
+    }
+
+    if (currentScreen === 'RoomBooking') {
+      return (
+        <RoomBookingScreen
+          room={selectedRoom}
+          authUser={authUser}
+          onBack={() => navigateTo('RoomDetails')}
+          onRequireLogin={() => openAuthScreen('Login', 'RoomBooking')}
+          onBookingConfirmed={(booking) => {
+            setConfirmedBooking(booking);
+            navigateTo('BookingConfirmation');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'RoomDetails') {
+      return (
+        <RoomDetailsScreen
+          room={selectedRoom}
+          isLoggedIn={isLoggedIn}
+          onBack={() => navigateTo('Rooms')}
+          onBookRoom={(room) => {
+            setSelectedRoom(room);
+            navigateTo('RoomBooking');
+          }}
+          onRequireLogin={(room) => {
+            if (room) setSelectedRoom(room);
+            openAuthScreen('Login', 'RoomBooking');
+          }}
+        />
+      );
+    }
+
     if (currentScreen === 'Rooms') {
       return (
         <RoomsScreen
           isLoggedIn={isLoggedIn}
           onTabPress={handleTabPress}
+          onSelectRoom={(room) => {
+            setSelectedRoom(room);
+            navigateTo('RoomDetails');
+          }}
           onRequireLogin={() => openAuthScreen('Login', 'Rooms')}
         />
       );
