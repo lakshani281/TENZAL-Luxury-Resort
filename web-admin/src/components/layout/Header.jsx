@@ -1,7 +1,15 @@
 import React from 'react';
 import { Search, Bell } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Header({ title, subtitle, searchPlaceholder = 'Search records...', onSearchChange }) {
+  const { user } = useAuth();
+  const initials = (user?.name || 'NP')
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 mb-6 border-b border-gray-200/80">
       <div>
@@ -40,14 +48,14 @@ export default function Header({ title, subtitle, searchPlaceholder = 'Search re
         {/* User Badge */}
         <div className="flex items-center gap-3 pl-2">
           <div className="w-10 h-10 rounded-full bg-[#d8b5a0] text-[#4a2e1d] font-semibold flex items-center justify-center text-sm shadow-xs">
-            NP
+            {initials}
           </div>
           <div className="hidden lg:block text-left">
             <p className="text-sm font-semibold text-gray-900 leading-tight">
-              Nadeesha Perera
+              {user?.name || 'Staff User'}
             </p>
-            <p className="text-xs text-gray-400">
-              Administrator
+            <p className="text-xs text-gray-400 capitalize">
+              {user?.role || 'Administrator'}
             </p>
           </div>
         </div>
