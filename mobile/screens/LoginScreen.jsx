@@ -10,6 +10,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -19,13 +20,20 @@ export default function LoginScreen({
   onForgotPassword,
   onCreateAccount,
   onBack,
+  isLoading = false,
+  apiError = '',
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSignInPress = () => {
+  const busy = isLoading || submitting;
+  const displayError = errorMessage || apiError;
+
+  const handleSignInPress = async () => {
+    if (busy) return;
     setErrorMessage('');
 
     const trimmedEmail = email.trim();
@@ -52,7 +60,14 @@ export default function LoginScreen({
     }
 
     if (onSignIn) {
-      onSignIn({ email: trimmedEmail, password });
+      try {
+        setSubmitting(true);
+        await onSignIn({ email: trimmedEmail, password });
+      } catch (err) {
+        setErrorMessage(err?.message || 'Unable to sign in. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
     } else if (navigation && navigation.navigate) {
       navigation.navigate('Summary');
     }
@@ -72,6 +87,16 @@ export default function LoginScreen({
         >
           {/* Top Brand Header */}
           <View style={styles.brandHeader}>
+            {onBack ? (
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={onBack}
+                activeOpacity={0.7}
+                disabled={busy}
+              >
+                <Ionicons name="arrow-back" size={18} color="#183642" />
+              </TouchableOpacity>
+            ) : null}
             <Text style={styles.brandText}>TENZAL</Text>
           </View>
 
@@ -85,10 +110,10 @@ export default function LoginScreen({
           {/* Form Inputs */}
           <View style={styles.formContainer}>
             {/* Error Banner */}
-            {errorMessage ? (
+            {displayError ? (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle-outline" size={16} color="#C53030" />
-                <Text style={styles.errorText}>{errorMessage}</Text>
+                <Text style={styles.errorText}>{displayError}</Text>
               </View>
             ) : null}
 
@@ -153,11 +178,16 @@ export default function LoginScreen({
 
             {/* Sign In Button */}
             <TouchableOpacity
-              style={styles.signInButton}
+              style={[styles.signInButton, busy && { opacity: 0.7 }]}
               activeOpacity={0.85}
               onPress={handleSignInPress}
+              disabled={busy}
             >
-              <Text style={styles.signInButtonText}>Sign in</Text>
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.signInButtonText}>Sign in</Text>
+              )}
             </TouchableOpacity>
 
             {/* Bottom Create Account Link */}
@@ -186,7 +216,20 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 44,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E2DC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   brandText: {
     fontSize: 16,

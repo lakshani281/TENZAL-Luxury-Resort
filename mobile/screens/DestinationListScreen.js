@@ -13,7 +13,7 @@ import DestinationCard from '../components/DestinationCard';
 import CategoryFilter from '../components/CategoryFilter';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function DestinationListScreen({ onDestinationPress }) {
+export default function DestinationListScreen({ onDestinationPress, onTabPress }) {
   const [selectedCategory, setSelectedCategory] = useState('For you');
   const [searchText, setSearchText] = useState('');
 
@@ -108,7 +108,7 @@ export default function DestinationListScreen({ onDestinationPress }) {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigation activeTab="Explore" />
+      <BottomNavigation activeTab="Explore" onTabPress={onTabPress} />
     </View>
   );
 }
