@@ -4,42 +4,44 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
+  Image,
   SafeAreaView,
   ActivityIndicator,
+  RefreshControl,
+  StyleSheet,
   Platform,
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import BottomNavigation from '../components/BottomNavigation';
-import { getBackendOrigin } from '../services/foodApi';
+import { getRooms } from '../services/bookingApi';
 
 export default function RoomsScreen({
   isLoggedIn = false,
   onTabPress,
+  onSelectRoom,
   onRequireLogin,
 }) {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [selectedRoomNotice, setSelectedRoomNotice] = useState('');
 
-  const fetchRooms = useCallback(async () => {
-    setLoading(true);
+  const fetchRooms = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError('');
     try {
-      const response = await fetch(`${getBackendOrigin()}/api/rooms`, {
-        headers: { Accept: 'application/json' },
-      });
-      const json = await response.json();
-      if (!response.ok) {
-        throw new Error(json?.message || `Failed to load rooms (HTTP ${response.status})`);
-      }
-      setRooms(Array.isArray(json?.data) ? json.data : []);
+      const data = await getRooms();
+      setRooms(data);
     } catch (err) {
       setError(err?.message || 'Unable to connect to the resort server.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -47,28 +49,25 @@ export default function RoomsScreen({
     fetchRooms();
   }, [fetchRooms]);
 
-  const handleBookRoomPress = (room) => {
-    if (!isLoggedIn) {
-      onRequireLogin?.();
-      return;
-    }
-    setSelectedRoomNotice(
-      `Signed-in booking verified for ${room.name || `Room ${room.room_number || ''}`}. Full mobile booking checkout is managed via the resort booking module.`
-    );
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF9F4" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchRooms(true)}
+            tintColor="#347F8C"
+          />
+        }
       >
         <View style={styles.header}>
           <Text style={styles.brand}>TENZAL</Text>
           <Text style={styles.heading}>Rooms & Suites</Text>
           <Text style={styles.subtitle}>
-            Sign in required to create or manage bookings.
+            Select a room to view details, check dates, and reserve your stay.
           </Text>
         </View>
 
@@ -76,19 +75,13 @@ export default function RoomsScreen({
           <View style={styles.authNotice}>
             <Ionicons name="lock-closed-outline" size={18} color="#347F8C" />
             <Text style={styles.authNoticeText}>
-              Guest sign-in is required before booking a room.
+              Sign in is required to complete a room booking.
             </Text>
             <TouchableOpacity onPress={onRequireLogin} activeOpacity={0.8}>
               <Text style={styles.authNoticeLink}>Sign in</Text>
             </TouchableOpacity>
           </View>
         )}
-
-        {selectedRoomNotice ? (
-          <View style={styles.infoBanner}>
-            <Text style={styles.infoBannerText}>{selectedRoomNotice}</Text>
-          </View>
-        ) : null}
 
         {loading ? (
           <View style={styles.centerBox}>
@@ -97,49 +90,107 @@ export default function RoomsScreen({
           </View>
         ) : error ? (
           <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={24} color="#C53030" />
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={fetchRooms}>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => fetchRooms(false)}>
               <Text style={styles.retryBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : rooms.length === 0 ? (
           <View style={styles.centerBox}>
+            <Ionicons name="bed-outline" size={32} color="#898780" />
             <Text style={styles.loadingText}>No rooms available right now.</Text>
           </View>
         ) : (
-          rooms.map((room) => (
-            <View key={String(room.id || room.room_number)} style={styles.roomCard}>
-              <View style={styles.roomHeader}>
-                <Text style={styles.roomTitle}>
-                  {room.name || `Room ${room.room_number || ''}`}
-                </Text>
-                {room.status ? (
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusText}>{room.status}</Text>
+          rooms.map((room) => {
+            const isActive = room.status === 'active';
+            return (
+              <TouchableOpacity
+                key={String(room.id || room.room_number)}
+                style={styles.roomCard}
+                activeOpacity={0.88}
+                onPress={() => onSelectRoom?.(room)}
+              >
+                {room.image_url ? (
+                  <Image
+                    source={{ uri: room.image_url }}
+                    style={styles.roomImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.roomImage, styles.imagePlaceholder]}>
+                    <Ionicons name="bed-outline" size={32} color="#898780" />
                   </View>
-                ) : null}
-              </View>
-              {room.description ? (
-                <Text style={styles.roomDesc} numberOfLines={2}>
-                  {room.description}
-                </Text>
-              ) : null}
-              <View style={styles.roomFooter}>
-                <Text style={styles.priceText}>
-                  {room.price_per_night ? `LKR ${Number(room.price_per_night).toLocaleString()} / night` : 'Contact for rate'}
-                </Text>
-                <TouchableOpacity
-                  style={styles.bookBtn}
-                  activeOpacity={0.85}
-                  onPress={() => handleBookRoomPress(room)}
-                >
-                  <Text style={styles.bookBtnText}>
-                    {isLoggedIn ? 'Request Stay' : 'Sign in to Book'}
+                )}
+
+                <View style={styles.cardBody}>
+                  <View style={styles.badgeRow}>
+                    {room.type ? (
+                      <View style={styles.typeBadge}>
+                        <Text style={styles.typeText}>{room.type}</Text>
+                      </View>
+                    ) : null}
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        !isActive && styles.statusBadgeInactive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusText,
+                          !isActive && styles.statusTextInactive,
+                        ]}
+                      >
+                        {isActive ? 'Available' : room.status || 'Unavailable'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.roomTitle}>
+                    {room.name || `Room ${room.room_number || ''}`}
                   </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+                  {room.room_number ? (
+                    <Text style={styles.roomNumber}>Room {room.room_number}</Text>
+                  ) : null}
+
+                  {room.description ? (
+                    <Text style={styles.roomDesc} numberOfLines={2}>
+                      {room.description}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaItem}>
+                      <Ionicons name="people-outline" size={14} color="#5E7480" />
+                      <Text style={styles.metaText}>
+                        Up to {room.capacity || 2} guests
+                      </Text>
+                    </View>
+                    {room.size_sqm ? (
+                      <View style={styles.metaItem}>
+                        <Ionicons name="expand-outline" size={14} color="#5E7480" />
+                        <Text style={styles.metaText}>{room.size_sqm} m²</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.roomFooter}>
+                    <View>
+                      <Text style={styles.priceText}>
+                        ${Number(room.price_per_night || 0).toFixed(2)}
+                      </Text>
+                      <Text style={styles.perNightText}>per night</Text>
+                    </View>
+                    <View style={styles.viewBtn}>
+                      <Text style={styles.viewBtnText}>View Details</Text>
+                      <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
 
@@ -199,19 +250,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#347F8C',
   },
-  infoBanner: {
-    backgroundColor: '#DCEEF4',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  infoBannerText: {
-    color: '#1D6377',
-    fontSize: 12,
-    lineHeight: 18,
-  },
   centerBox: {
-    paddingVertical: 40,
+    paddingVertical: 48,
     alignItems: 'center',
   },
   loadingText: {
@@ -223,15 +263,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F5',
     borderWidth: 1,
     borderColor: '#FEB2B2',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 18,
     alignItems: 'center',
   },
   errorText: {
     color: '#C53030',
     fontSize: 13,
     textAlign: 'center',
-    marginBottom: 12,
+    marginVertical: 10,
   },
   retryBtn: {
     backgroundColor: '#347F8C',
@@ -248,57 +288,118 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#EAE8E0',
-    borderRadius: 15,
-    padding: 16,
-    marginBottom: 14,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
   },
-  roomHeader: {
+  roomImage: {
+    width: '100%',
+    height: 175,
+    backgroundColor: '#E8EDE7',
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardBody: {
+    padding: 16,
+  },
+  badgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  roomTitle: {
-    fontSize: 16,
+  typeBadge: {
+    backgroundColor: '#DCEEF4',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  typeText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: '#263B39',
-    flex: 1,
+    color: '#1D6377',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   statusBadge: {
-    backgroundColor: '#EDF2ED',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
+  },
+  statusBadgeInactive: {
+    backgroundColor: '#FEE2E2',
   },
   statusText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#347F8C',
+    color: '#15803D',
     textTransform: 'uppercase',
+  },
+  statusTextInactive: {
+    color: '#991B1B',
+  },
+  roomTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#263B39',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  roomNumber: {
+    fontSize: 11,
+    color: '#898780',
+    marginTop: 2,
+    marginBottom: 6,
   },
   roomDesc: {
     fontSize: 12,
     color: '#77766F',
     lineHeight: 18,
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 14,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#5E7480',
   },
   roomFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F1EA',
+    paddingTop: 12,
   },
   priceText: {
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: '700',
     color: '#263B39',
   },
-  bookBtn: {
+  perNightText: {
+    fontSize: 10,
+    color: '#898780',
+  },
+  viewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#347F8C',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 10,
+    gap: 6,
   },
-  bookBtnText: {
+  viewBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
