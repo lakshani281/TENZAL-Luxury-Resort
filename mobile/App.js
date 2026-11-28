@@ -1,49 +1,16 @@
-
-
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import HomeScreen from './screens/HomeScreen';
+import RoomsScreen from './screens/RoomsScreen';
+import RoomDetailsScreen from './screens/RoomDetailsScreen';
+import RoomBookingScreen from './screens/RoomBookingScreen';
+import BookingConfirmationScreen from './screens/BookingConfirmationScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import DestinationListScreen from './screens/DestinationListScreen';
 import DestinationDetailsScreen from './screens/DestinationDetailsScreen';
-
-export default function App() {
-  const [selectedDestination, setSelectedDestination] = useState(null);
-
-  const openDestination = (destination) => {
-    setSelectedDestination(destination);
-  };
-
-  const goBackToDestinations = () => {
-    setSelectedDestination(null);
-  };
-
-  return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-
-      {selectedDestination ? (
-        <DestinationDetailsScreen
-          destination={selectedDestination}
-          onBack={goBackToDestinations}
-        />
-      ) : (
-        <DestinationListScreen
-          onDestinationPress={openDestination}
-        />
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FAF9F4',
-  },
-});
-
-import React, { useState } from 'react';
+import FoodMenuScreen from './screens/FoodMenuScreen';
 import PlanMyDayHomeScreen from './screens/PlanMyDayHomeScreen';
 import PlanMyDayFormScreen from './screens/PlanMyDayFormScreen';
 import PlanMyDayBudgetScreen from './screens/PlanMyDayBudgetScreen';
@@ -56,173 +23,379 @@ import CreateAccountScreen from './screens/CreateAccountScreen';
 import PlanSavedScreen from './screens/PlanSavedScreen';
 import SavedPlansScreen from './screens/SavedPlansScreen';
 
+import {
+  getAuthToken,
+  getAuthUser,
+  clearAuthSession,
+  isTokenExpired,
+  login as loginGuest,
+  register as registerGuest,
+  logout as logoutGuest,
+} from './services/authStorage';
+
+const MAIN_TABS = new Set(['Home', 'Rooms', 'Explore', 'Plan', 'Profile']);
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
+  const [selectedDestination, setSelectedDestination] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authReturnScreen, setAuthReturnScreen] = useState('Profile');
 
-  // Saved Plans List Screen
-  if (currentScreen === 'SavedPlans') {
-    return (
-      <SavedPlansScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Summary'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
-        }}
-        onBack={() => setCurrentScreen('Summary')}
-        onSelectPlan={() => setCurrentScreen('Summary')}
-      />
-    );
-  }
+  // Restore authenticated session on startup if a valid, non-expired token exists
+  useEffect(() => {
+    let mounted = true;
+    async function restoreSession() {
+      try {
+        const token = await getAuthToken();
+        const user = await getAuthUser();
+        if (token && !isTokenExpired(token)) {
+          if (mounted) {
+            setAuthUser(user);
+            setIsLoggedIn(true);
+          }
+        } else if (token) {
+          await clearAuthSession();
+        }
+      } catch {
+        // Ignore storage read failures on startup
+      }
+    }
+    restoreSession();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  // Plan Saved Confirmation Screen
-  if (currentScreen === 'PlanSaved') {
-    return (
-      <PlanSavedScreen
-        navigation={{
-          navigate: (screenName) => setCurrentScreen(screenName || 'SavedPlans'),
-        }}
-        onViewItinerary={() => setCurrentScreen('SavedPlans')}
-        onBackToHome={() => setCurrentScreen('Home')}
-      />
-    );
-  }
+  const navigateTo = (screenName) => {
+    if (screenName !== 'DestinationDetails') {
+      setSelectedDestination(null);
+    }
+    setCurrentScreen(screenName || 'Home');
+  };
 
-  // Create Account Screen
-  if (currentScreen === 'CreateAccount') {
-    return (
-      <CreateAccountScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Summary'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'PlanSaved'),
-        }}
-        onBack={() => setCurrentScreen('Summary')}
-        onSignUp={(userData) => {
-          console.log('Account created:', userData);
-          setIsLoggedIn(true);
-          setCurrentScreen('PlanSaved');
-        }}
-        onSignInLink={() => setCurrentScreen('Login')}
-      />
-    );
-  }
+  const handleTabPress = (tabName) => {
+    if (MAIN_TABS.has(tabName)) {
+      navigateTo(tabName);
+    }
+  };
 
-  // Login Screen
-  if (currentScreen === 'Login') {
-    return (
-      <LoginScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Summary'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'PlanSaved'),
-        }}
-        onBack={() => setCurrentScreen('Summary')}
-        onSignIn={(credentials) => {
-          console.log('Signed in:', credentials);
-          setIsLoggedIn(true);
-          setCurrentScreen('PlanSaved');
-        }}
-        onForgotPassword={() => {
-          console.log('Forgot Password clicked');
-        }}
-        onCreateAccount={() => setCurrentScreen('CreateAccount')}
-      />
-    );
-  }
+  const openAuthScreen = (targetScreen, returnTo) => {
+    setAuthReturnScreen(returnTo || currentScreen || 'Profile');
+    navigateTo(targetScreen);
+  };
 
-  // Screen 7: Summary Screen (Generated Itinerary & Login Modal Prompt)
-  if (currentScreen === 'Summary') {
+  const handleSignIn = async ({ email, password }) => {
+    const result = await loginGuest({ email, password });
+    setAuthUser(result.user);
+    setIsLoggedIn(true);
+    navigateTo(authReturnScreen === 'Summary' ? 'PlanSaved' : authReturnScreen || 'Profile');
+  };
+
+  const handleSignUp = async ({ fullName, email, phoneNumber, password }) => {
+    const result = await registerGuest({
+      name: fullName,
+      email,
+      phone: phoneNumber,
+      password,
+    });
+    setAuthUser(result.user);
+    setIsLoggedIn(true);
+    navigateTo(authReturnScreen === 'Summary' ? 'PlanSaved' : authReturnScreen || 'Profile');
+  };
+
+  const handleSignOut = async () => {
+    await logoutGuest();
+    setAuthUser(null);
+    setIsLoggedIn(false);
+    navigateTo('Profile');
+  };
+
+  const navigationProp = {
+    navigate: (screenName) => navigateTo(screenName),
+    goBack: () => navigateTo('Home'),
+  };
+
+  const renderScreen = () => {
+    // Food Ordering Flow
+    if (currentScreen === 'FoodMenu') {
+      return (
+        <FoodMenuScreen
+          navigation={navigationProp}
+          onBack={() => navigateTo('Home')}
+        />
+      );
+    }
+
+    // Explore / Destinations Flow
+    if (currentScreen === 'Explore') {
+      if (selectedDestination) {
+        return (
+          <DestinationDetailsScreen
+            destination={selectedDestination}
+            onBack={() => setSelectedDestination(null)}
+          />
+        );
+      }
+      return (
+        <DestinationListScreen
+          onDestinationPress={(destination) => setSelectedDestination(destination)}
+          onTabPress={handleTabPress}
+        />
+      );
+    }
+
+    // Room Booking Flow
+    if (currentScreen === 'BookingConfirmation') {
+      return (
+        <BookingConfirmationScreen
+          booking={confirmedBooking}
+          onReturnHome={() => navigateTo('Home')}
+          onBrowseRooms={() => navigateTo('Rooms')}
+        />
+      );
+    }
+
+    if (currentScreen === 'RoomBooking') {
+      return (
+        <RoomBookingScreen
+          room={selectedRoom}
+          authUser={authUser}
+          onBack={() => navigateTo('RoomDetails')}
+          onRequireLogin={() => openAuthScreen('Login', 'RoomBooking')}
+          onBookingConfirmed={(booking) => {
+            setConfirmedBooking(booking);
+            navigateTo('BookingConfirmation');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'RoomDetails') {
+      return (
+        <RoomDetailsScreen
+          room={selectedRoom}
+          isLoggedIn={isLoggedIn}
+          onBack={() => navigateTo('Rooms')}
+          onBookRoom={(room) => {
+            setSelectedRoom(room);
+            navigateTo('RoomBooking');
+          }}
+          onRequireLogin={(room) => {
+            if (room) setSelectedRoom(room);
+            openAuthScreen('Login', 'RoomBooking');
+          }}
+        />
+      );
+    }
+
+    if (currentScreen === 'Rooms') {
+      return (
+        <RoomsScreen
+          isLoggedIn={isLoggedIn}
+          onTabPress={handleTabPress}
+          onSelectRoom={(room) => {
+            setSelectedRoom(room);
+            navigateTo('RoomDetails');
+          }}
+          onRequireLogin={() => openAuthScreen('Login', 'Rooms')}
+        />
+      );
+    }
+
+    // Profile Flow
+    if (currentScreen === 'Profile') {
+      return (
+        <ProfileScreen
+          isLoggedIn={isLoggedIn}
+          authUser={authUser}
+          onTabPress={handleTabPress}
+          onSignIn={() => openAuthScreen('Login', 'Profile')}
+          onCreateAccount={() => openAuthScreen('CreateAccount', 'Profile')}
+          onSignOut={handleSignOut}
+          onOpenSavedPlans={() => {
+            if (isLoggedIn) {
+              navigateTo('SavedPlans');
+            } else {
+              openAuthScreen('Login', 'SavedPlans');
+            }
+          }}
+          onOpenFoodMenu={() => navigateTo('FoodMenu')}
+        />
+      );
+    }
+
+    // Authentication Flow
+    if (currentScreen === 'CreateAccount') {
+      return (
+        <CreateAccountScreen
+          navigation={navigationProp}
+          onBack={() => navigateTo(authReturnScreen || 'Home')}
+          onSignUp={handleSignUp}
+          onSignInLink={() => navigateTo('Login')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Login') {
+      return (
+        <LoginScreen
+          navigation={navigationProp}
+          onBack={() => navigateTo(authReturnScreen || 'Home')}
+          onSignIn={handleSignIn}
+          onForgotPassword={() => {}}
+          onCreateAccount={() => navigateTo('CreateAccount')}
+        />
+      );
+    }
+
+    // Plan My Day Flow
+    if (currentScreen === 'SavedPlans') {
+      return (
+        <SavedPlansScreen
+          navigation={{
+            goBack: () => navigateTo(isLoggedIn ? 'Profile' : 'Summary'),
+            navigate: (screenName) => navigateTo(screenName || 'Summary'),
+          }}
+          onBack={() => navigateTo(isLoggedIn ? 'Profile' : 'Summary')}
+          onSelectPlan={() => navigateTo('Summary')}
+        />
+      );
+    }
+
+    if (currentScreen === 'PlanSaved') {
+      return (
+        <PlanSavedScreen
+          navigation={navigationProp}
+          onViewItinerary={() => navigateTo('SavedPlans')}
+          onBackToHome={() => navigateTo('Home')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Summary') {
+      return (
+        <PlanMyDaySummaryScreen
+          isLoggedIn={isLoggedIn}
+          navigation={{
+            goBack: () => navigateTo('Travellers'),
+            navigate: (screenName) => navigateTo(screenName || 'Home'),
+          }}
+          onBack={() => navigateTo('Travellers')}
+          onEdit={() => navigateTo('Form')}
+          onRegenerate={() => navigateTo('Form')}
+          onLogin={() => openAuthScreen('Login', 'Summary')}
+          onCreateAccount={() => openAuthScreen('CreateAccount', 'Summary')}
+          onSavePlanDirect={() => navigateTo('PlanSaved')}
+          onViewSavedPlansDirect={() => navigateTo('SavedPlans')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Travellers') {
+      return (
+        <PlanMyDayTravellersScreen
+          navigation={{
+            goBack: () => navigateTo('Travel'),
+            navigate: (screenName) => navigateTo(screenName || 'Summary'),
+          }}
+          onBack={() => navigateTo('Travel')}
+          onNext={() => navigateTo('Summary')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Travel') {
+      return (
+        <PlanMyDayTravelScreen
+          navigation={{
+            goBack: () => navigateTo('Interests'),
+            navigate: (screenName) => navigateTo(screenName || 'Travellers'),
+          }}
+          onBack={() => navigateTo('Interests')}
+          onNext={() => navigateTo('Travellers')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Interests') {
+      return (
+        <PlanMyDayInterestsScreen
+          navigation={{
+            goBack: () => navigateTo('Budget'),
+            navigate: (screenName) => navigateTo(screenName || 'Travel'),
+          }}
+          onBack={() => navigateTo('Budget')}
+          onNext={() => navigateTo('Travel')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Budget') {
+      return (
+        <PlanMyDayBudgetScreen
+          navigation={{
+            goBack: () => navigateTo('Form'),
+            navigate: (screenName) => navigateTo(screenName || 'Interests'),
+          }}
+          onBack={() => navigateTo('Form')}
+          onNext={() => navigateTo('Interests')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Form') {
+      return (
+        <PlanMyDayFormScreen
+          navigation={{
+            goBack: () => navigateTo('Plan'),
+            navigate: (screenName) => navigateTo(screenName || 'Budget'),
+          }}
+          onNext={() => navigateTo('Budget')}
+          onBack={() => navigateTo('Plan')}
+        />
+      );
+    }
+
+    if (currentScreen === 'Plan') {
+      return (
+        <PlanMyDayHomeScreen
+          navigation={navigationProp}
+          onNavigateToForm={() => navigateTo('Form')}
+          onBack={() => navigateTo('Home')}
+          onTabPress={handleTabPress}
+        />
+      );
+    }
+
+    // Default: Home Tab
     return (
-      <PlanMyDaySummaryScreen
+      <HomeScreen
         isLoggedIn={isLoggedIn}
-        navigation={{
-          goBack: () => setCurrentScreen('Travellers'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Home'),
-        }}
-        onBack={() => setCurrentScreen('Travellers')}
-        onEdit={() => setCurrentScreen('Form')}
-        onRegenerate={() => setCurrentScreen('Form')}
-        onLogin={() => setCurrentScreen('Login')}
-        onCreateAccount={() => setCurrentScreen('CreateAccount')}
-        onSavePlanDirect={() => setCurrentScreen('PlanSaved')}
-        onViewSavedPlansDirect={() => setCurrentScreen('SavedPlans')}
+        authUser={authUser}
+        onTabPress={handleTabPress}
+        onOpenFoodMenu={() => navigateTo('FoodMenu')}
+        onOpenExplore={() => navigateTo('Explore')}
+        onOpenPlan={() => navigateTo('Plan')}
+        onOpenRooms={() => navigateTo('Rooms')}
+        onOpenLogin={() => openAuthScreen('Login', 'Home')}
       />
     );
-  }
+  };
 
-  // Screen 6: Travellers Screen (Step 5 of 5)
-  if (currentScreen === 'Travellers') {
-    return (
-      <PlanMyDayTravellersScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Travel'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Summary'),
-        }}
-        onBack={() => setCurrentScreen('Travel')}
-        onNext={() => setCurrentScreen('Summary')}
-      />
-    );
-  }
-
-  // Screen 5: Travel Mode Screen (Step 4 of 5)
-  if (currentScreen === 'Travel') {
-    return (
-      <PlanMyDayTravelScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Interests'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Travellers'),
-        }}
-        onBack={() => setCurrentScreen('Interests')}
-        onNext={() => setCurrentScreen('Travellers')}
-      />
-    );
-  }
-
-  // Screen 4: Interests Screen (Step 3 of 5)
-  if (currentScreen === 'Interests') {
-    return (
-      <PlanMyDayInterestsScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Budget'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Travel'),
-        }}
-        onBack={() => setCurrentScreen('Budget')}
-        onNext={() => setCurrentScreen('Travel')}
-      />
-    );
-  }
-
-  // Screen 3: Budget Screen (Step 2 of 5)
-  if (currentScreen === 'Budget') {
-    return (
-      <PlanMyDayBudgetScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Form'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Interests'),
-        }}
-        onBack={() => setCurrentScreen('Form')}
-        onNext={() => setCurrentScreen('Interests')}
-      />
-    );
-  }
-
-  // Screen 2: Form Screen (Step 1 of 5)
-  if (currentScreen === 'Form') {
-    return (
-      <PlanMyDayFormScreen
-        navigation={{
-          goBack: () => setCurrentScreen('Home'),
-          navigate: (screenName) => setCurrentScreen(screenName || 'Budget'),
-        }}
-        onNext={() => setCurrentScreen('Budget')}
-        onBack={() => setCurrentScreen('Home')}
-      />
-    );
-  }
-
-  // Screen 1: Home Screen (Default)
   return (
-    <PlanMyDayHomeScreen
-      onNavigateToForm={() => setCurrentScreen('Form')}
-    />
+    <View style={styles.container}>
+      <StatusBar style="dark" />
+      {renderScreen()}
+    </View>
   );
 }
 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FAF9F4',
+  },
+});

@@ -123,8 +123,8 @@ function authorize(...allowedRoles) {
 function createRateLimiter({ windowMs = 15 * 60 * 1000, maxRequests = 10, message = 'Too many requests' } = {}) {
   const requests = new Map();
 
-  // Periodically clean expired entries
-  setInterval(() => {
+  // Periodically clean expired entries; unref() prevents the timer from blocking process exit
+  const cleanupTimer = setInterval(() => {
     const now = Date.now();
     for (const [ip, data] of requests.entries()) {
       if (now - data.startTime > windowMs) {
@@ -132,6 +132,9 @@ function createRateLimiter({ windowMs = 15 * 60 * 1000, maxRequests = 10, messag
       }
     }
   }, windowMs);
+  if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
+    cleanupTimer.unref();
+  }
 
   return (req, res, next) => {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';

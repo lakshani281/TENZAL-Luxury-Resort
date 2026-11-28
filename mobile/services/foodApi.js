@@ -39,8 +39,10 @@ import { Platform } from 'react-native';
 // TOGGLE THIS TO TRUE WHEN TESTING ON A PHYSICAL PHONE VIA EXPO GO:
 export const USE_PHYSICAL_DEVICE = false;
 
-// YOUR COMPUTER'S LOCAL NETWORK IP (Run 'ipconfig' in Windows PowerShell):
-export const DEV_MACHINE_LAN_IP = '10.79.51.130';
+// Configurable LAN IP for physical device testing (or pass EXPO_PUBLIC_DEV_LAN_IP env variable).
+// Default empty to prevent accidental connection to a previous developer's stale subnet.
+export const DEV_MACHINE_LAN_IP =
+  (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_DEV_LAN_IP) || '';
 
 // Backend port configured in backend/.env
 export const BACKEND_PORT = 5000;
@@ -49,23 +51,30 @@ export const BACKEND_PORT = 5000;
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 /**
+ * Resolves the backend host origin for the current runtime platform.
+ * 
+ * @returns {string} The backend origin (e.g. 'http://localhost:5000')
+ */
+export function getBackendOrigin() {
+  if (USE_PHYSICAL_DEVICE) {
+    const lanIp = DEV_MACHINE_LAN_IP && DEV_MACHINE_LAN_IP.trim();
+    if (lanIp) {
+      return `http://${lanIp}:${BACKEND_PORT}`;
+    }
+  }
+  if (Platform.OS === 'android') {
+    return `http://10.0.2.2:${BACKEND_PORT}`;
+  }
+  return `http://localhost:${BACKEND_PORT}`;
+}
+
+/**
  * Resolves the appropriate base URL for the current runtime platform.
  * 
  * @returns {string} The base URL for the food API
  */
 export function getBaseUrl() {
-  // If physical device mode is explicitly turned on
-  if (USE_PHYSICAL_DEVICE && DEV_MACHINE_LAN_IP) {
-    return `http://${DEV_MACHINE_LAN_IP}:${BACKEND_PORT}/api/food`;
-  }
-
-  // Standard Android Studio Emulator loopback address
-  if (Platform.OS === 'android') {
-    return `http://10.0.2.2:${BACKEND_PORT}/api/food`;
-  }
-
-  // Web and iOS Simulator use localhost
-  return `http://localhost:${BACKEND_PORT}/api/food`;
+  return `${getBackendOrigin()}/api/food`;
 }
 
 /**
@@ -346,9 +355,10 @@ export async function getFoodItemById(id) {
  * @param {string} orderData.room_name - Verified room name (e.g. 'Uva Valley View Room — Room 3')
  * @param {string} [orderData.special_note] - Optional dietary or delivery notes
  * @param {Array<Object>} orderData.items - Array of items (e.g. [{ item_id: 6, quantity: 1 }])
+ * @param {string|null} [token=null] - Optional guest JWT Bearer token for authenticated checkout
  * @returns {Promise<Object>} Created order data from backend
  */
-export async function createOrder(orderData) {
+export async function createOrder(orderData, token = null) {
   if (!orderData || typeof orderData !== 'object') {
     throw new Error('Order data is required to place an order.');
   }
@@ -419,8 +429,14 @@ export async function createOrder(orderData) {
   }
 
   const url = buildUrl('/orders');
+  const headers = {};
+  if (token && typeof token === 'string' && token.trim().length > 0) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+
   const json = await request(url, {
     method: 'POST',
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -429,6 +445,113 @@ export async function createOrder(orderData) {
   }
 
   return json.data;
+}
+
+/**
+ * Retrieves authenticated guest order history.
+ * Endpoint: GET /api/food/orders/my-orders
+ *
+ * @param {string} token - Authenticated guest Bearer JWT token
+ * @param {Object} [options={}]
+ * @param {number} [options.page=1]
+ * @param {number} [options.limit=10]
+ * @param {string} [options.status] - Optional status filter ('Pending', 'In Kitchen', etc.)
+ * @returns {Promise<{ count: number, total: number, page: number, limit: number, totalPages: number, data: Array }>}
+ */
+export async function getMyOrders(token, { page = 1, limit = 10, status } = {}) {
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    throw new Error('Authentication token is required to view your order history.');
+  }
+
+  const params = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  if (status && typeof status === 'string' && status.trim().length > 0 && status.toLowerCase() !== 'all') {
+    params.status = status.trim();
+  }
+
+  const url = buildUrl('/orders/my-orders', params);
+  const json = await request(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token.trim()}`,
+    },
+  });
+
+  return json;
+}
+
+/**
+ * Retrieves safe public order progress tracking by unique order code.
+ * Endpoint: GET /api/food/orders/code/:order_code
+ *
+ * Strict Privacy & Security Specification:
+ * - Returns ONLY public tracking fields: order_code, status, estimated_delivery_minutes, created_at, item_count.
+ * - Never returns or requests private guest data (room, notes, prices, items).
+ * - Protected by server-side in-memory IP rate limiter (30 req/min).
+ *
+ * @param {string} orderCode - Human-friendly order code (e.g. 'ORD-20261121-7F3A2B')
+ * @returns {Promise<{ order_code: string, status: string, estimated_delivery_minutes: number, created_at: string, item_count: number }>}
+ */
+export async function getOrderTrackingByCode(orderCode) {
+  if (!orderCode || typeof orderCode !== 'string') {
+    throw new Error('Order code is required.');
+  }
+
+  const cleanCode = orderCode.trim().toUpperCase();
+  const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+  if (!ORDER_CODE_REGEX.test(cleanCode)) {
+    throw new Error('Invalid order code format. Expected format: ORD-YYYYMMDD-XXXXXX');
+  }
+
+  const url = buildUrl(`/orders/code/${encodeURIComponent(cleanCode)}`);
+  const json = await request(url, { method: 'GET' });
+
+  if (!json?.data) {
+    throw new Error('Invalid server response: Tracking information was not returned.');
+  }
+
+  return json.data;
+}
+
+/**
+ * Retrieves safe public order progress tracking for multiple order codes in a single request.
+ * Endpoint: POST /api/food/orders/tracking/batch
+ *
+ * Strict Specification:
+ * - Slices array to maximum 10 order codes
+ * - Validates and normalizes codes to uppercase
+ * - Returns array of 5 public tracking fields: order_code, status, estimated_delivery_minutes, created_at, item_count
+ * - Protected by server-side rate limiter (30 req/min)
+ *
+ * @param {Array<string>} orderCodes - Array of order codes (1 to 10 codes)
+ * @returns {Promise<Array<{ order_code: string, status: string, estimated_delivery_minutes: number, created_at: string, item_count: number }>>}
+ */
+export async function getBatchOrderTracking(orderCodes) {
+  if (!Array.isArray(orderCodes) || orderCodes.length === 0) {
+    return [];
+  }
+
+  const ORDER_CODE_REGEX = /^ORD-\d{8}-[A-F0-9]{6}$/;
+  const validCodes = orderCodes
+    .filter((c) => typeof c === 'string' && c.trim().length > 0)
+    .map((c) => c.trim().toUpperCase())
+    .filter((c) => ORDER_CODE_REGEX.test(c))
+    .slice(0, 10);
+
+  if (validCodes.length === 0) {
+    return [];
+  }
+
+  const url = buildUrl('/orders/tracking/batch');
+  const json = await request(url, {
+    method: 'POST',
+    body: JSON.stringify({ order_codes: validCodes }),
+  });
+
+  return Array.isArray(json?.data) ? json.data : [];
 }
 
 /**
@@ -448,4 +571,6 @@ export default {
   getFoodItems,
   getFoodItemById,
   createOrder,
+  getOrderTrackingByCode,
+  getBatchOrderTracking,
 };

@@ -1,24 +1,23 @@
 import React from 'react';
 import Header from '../components/layout/Header';
+import { Layers } from 'lucide-react';
 
-export default function PlaceholderPage({ title, subtitle }) {
+export default function PlaceholderPage({ title = 'Module', subtitle = '' }) {
   return (
-    <div>
-      <Header
-        title={title}
-        subtitle={subtitle}
-        searchPlaceholder={`Search ${title.toLowerCase()}...`}
-      />
+    <div className="space-y-6">
+      <Header title={title} subtitle={subtitle} />
 
-      <div className="bg-white rounded-3xl border border-gray-200/90 shadow-xs p-8 text-center">
-        <h4 className="font-serif text-xl font-bold text-gray-800 mb-2">{title}</h4>
-        <p className="text-sm text-gray-500 max-w-md mx-auto">
-          {subtitle || 'This section is assigned to another team member as part of the TENZAL Luxury Resort group project.'}
-        </p>
-        <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600">
-          <span>Student ID: 22CIS0276 Assigned Scope:</span>
-          <span className="font-semibold text-[#245d6a]">Room Booking Module</span>
+      <div className="bg-white rounded-3xl border border-gray-200/80 shadow-sm p-10 flex flex-col items-center justify-center text-center min-h-[320px]">
+        <div className="w-14 h-14 rounded-2xl bg-[#245d6a]/10 text-[#245d6a] flex items-center justify-center mb-4">
+          <Layers className="w-7 h-7" />
         </div>
+        <h3 className="font-serif text-2xl font-bold text-gray-900">{title}</h3>
+        {subtitle && (
+          <p className="text-sm text-gray-500 mt-2 max-w-md">{subtitle}</p>
+        )}
+        <span className="mt-5 inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+          Module Workspace Ready
+        </span>
       </div>
     </div>
   );
